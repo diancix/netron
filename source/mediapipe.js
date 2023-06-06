@@ -12,23 +12,20 @@ mediapipe.ModelFactory = class {
         return null;
     }
 
-    open(context) {
-        return Promise.resolve().then(() => {
-        // return context.require('./mediapipe-proto').then(() => {
-            mediapipe.proto = protobuf.get('mediapipe');
-            let config = null;
-            try {
-                const stream = context.stream;
-                const reader = protobuf.TextReader.open(stream);
-                // const config = mediapipe.proto.mediapipe.CalculatorGraphConfig.decodeText(reader);
-                config = new mediapipe.Object(reader);
-            }
-            catch (error) {
-                const message = error && error.message ? error.message : error.toString();
-                throw new mediapipe.Error('File text format is not mediapipe.CalculatorGraphConfig (' + message.replace(/\.$/, '') + ').');
-            }
-            return new mediapipe.Model(config);
-        });
+    async open(context) {
+        // await context.require('./mediapipe-proto');
+        mediapipe.proto = protobuf.get('mediapipe');
+        let config = null;
+        try {
+            const stream = context.stream;
+            const reader = protobuf.TextReader.open(stream);
+            // const config = mediapipe.proto.mediapipe.CalculatorGraphConfig.decodeText(reader);
+            config = new mediapipe.Object(reader);
+        } catch (error) {
+            const message = error && error.message ? error.message : error.toString();
+            throw new mediapipe.Error('File text format is not mediapipe.CalculatorGraphConfig (' + message.replace(/\.$/, '') + ').');
+        }
+        return new mediapipe.Model(config);
     }
 };
 
@@ -201,8 +198,7 @@ mediapipe.Node = class {
                     options.set(key, message[key]);
                 }
             }
-        }
-        else {
+        } else {
             for (const entry of node_options) {
                 for (const key of Object.keys(entry)) {
                     if (key !== '__type__') {
@@ -342,16 +338,13 @@ mediapipe.Object = class {
                         break;
                     }
                 }
-            }
-            else if (next.startsWith('"') && next.endsWith('"')) {
+            } else if (next.startsWith('"') && next.endsWith('"')) {
                 obj = next.substring(1, next.length - 1);
                 reader.next();
-            }
-            else if (next === 'true' || next === 'false') {
+            } else if (next === 'true' || next === 'false') {
                 obj = next;
                 reader.next();
-            }
-            else if (reader.first()) {
+            } else if (reader.first()) {
                 obj = [];
                 while (!reader.last()) {
                     const data = reader.token();
@@ -360,12 +353,10 @@ mediapipe.Object = class {
                         obj.push(parseFloat(data));
                     }
                 }
-            }
-            else if (!isNaN(next)) {
+            } else if (!isNaN(next)) {
                 obj = parseFloat(next);
                 reader.next();
-            }
-            else {
+            } else {
                 obj = next;
                 reader.next();
             }
@@ -375,8 +366,7 @@ mediapipe.Object = class {
             }
             if (this[tag]) {
                 this[tag].push(obj);
-            }
-            else {
+            } else {
                 if (Array.isArray(obj)) {
                     arrayTags.add(tag);
                 }

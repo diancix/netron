@@ -17,28 +17,26 @@ flax.ModelFactory = class {
         return null;
     }
 
-    open(context) {
-        return Promise.resolve().then(() => {
-            const stream = context.stream;
-            const packed = stream.peek();
-            // https://github.com/google/flax/blob/main/flax/serialization.py
-            const ext_hook = (code, data) => {
-                switch (code) {
-                    case 1: { // _MsgpackExtType.ndarray
-                        const tuple = execution.invoke('msgpack.unpackb', [ data ]);
-                        const dtype = execution.invoke('numpy.dtype', [ tuple[1] ]);
-                        dtype.byteorder = '<';
-                        return execution.invoke('numpy.ndarray', [ tuple[0], dtype, tuple[2] ]);
-                    }
-                    default: {
-                        throw new flax.Error("Unsupported MessagePack extension '" + code + "'.");
-                    }
+    async open(context) {
+        const stream = context.stream;
+        const packed = stream.peek();
+        // https://github.com/google/flax/blob/main/flax/serialization.py
+        const ext_hook = (code, data) => {
+            switch (code) {
+                case 1: { // _MsgpackExtType.ndarray
+                    const tuple = execution.invoke('msgpack.unpackb', [ data ]);
+                    const dtype = execution.invoke('numpy.dtype', [ tuple[1] ]);
+                    dtype.byteorder = '<';
+                    return execution.invoke('numpy.ndarray', [ tuple[0], dtype, tuple[2] ]);
                 }
-            };
-            const execution = new python.Execution();
-            const obj = execution.invoke('msgpack.unpackb', [ packed, ext_hook ]);
-            return new flax.Model(obj);
-        });
+                default: {
+                    throw new flax.Error("Unsupported MessagePack extension '" + code + "'.");
+                }
+            }
+        };
+        const execution = new python.Execution();
+        const obj = execution.invoke('msgpack.unpackb', [ packed, ext_hook ]);
+        return new flax.Model(obj);
     }
 };
 
@@ -75,15 +73,12 @@ flax.Graph = class {
                 if (flax.Utility.isTensor(value)) {
                     const obj = layer(path);
                     obj[name] = value;
-                }
-                else if (Array.isArray(value)) {
+                } else if (Array.isArray(value)) {
                     const obj = layer(path);
                     obj[name] = value;
-                }
-                else if (Object(value) === value) {
+                } else if (Object(value) === value) {
                     flatten(path.concat(name), value);
-                }
-                else {
+                } else {
                     const obj = layer(path);
                     obj[name] = value;
                 }
@@ -91,8 +86,7 @@ flax.Graph = class {
         };
         if (Array.isArray(obj)) {
             layer([]).value = obj;
-        }
-        else {
+        } else {
             flatten([], obj);
         }
         this._nodes = Array.from(layers).map((entry) => new flax.Node(entry[0], entry[1]));
@@ -169,12 +163,10 @@ flax.Node = class {
                 const argument = new flax.Argument(this._name + '.' + name, tensor);
                 const parameter = new flax.Parameter(name, [ argument ]);
                 this._inputs.push(parameter);
-            }
-            else if (Array.isArray(value)) {
+            } else if (Array.isArray(value)) {
                 const attribute = new flax.Attribute(name, value);
                 this._attributes.push(attribute);
-            }
-            else {
+            } else {
                 const attribute = new flax.Attribute(name, value);
                 this._attributes.push(attribute);
             }

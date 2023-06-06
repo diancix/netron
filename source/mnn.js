@@ -20,23 +20,20 @@ mnn.ModelFactory = class {
         return null;
     }
 
-    open(context) {
-        return context.require('./mnn-schema').then((/* schema */) => {
-            let net = null;
-            try {
-                mnn.schema = flatbuffers.get('mnn').MNN;
-                const stream = context.stream;
-                const reader = flatbuffers.BinaryReader.open(stream);
-                net = mnn.schema.Net.create(reader);
-            }
-            catch (error) {
-                const message = error && error.message ? error.message : error.toString();
-                throw new mnn.Error('File format is not mnn.Net (' + message.replace(/\.$/, '') + ').');
-            }
-            return context.metadata('mnn-metadata.json').then((metadata) => {
-                return new mnn.Model(metadata, net);
-            });
-        });
+    async open(context) {
+        await context.require('./mnn-schema');
+        let net = null;
+        try {
+            mnn.schema = flatbuffers.get('mnn').MNN;
+            const stream = context.stream;
+            const reader = flatbuffers.BinaryReader.open(stream);
+            net = mnn.schema.Net.create(reader);
+        } catch (error) {
+            const message = error && error.message ? error.message : error.toString();
+            throw new mnn.Error('File format is not mnn.Net (' + message.replace(/\.$/, '') + ').');
+        }
+        const metadata = await context.metadata('mnn-metadata.json');
+        return new mnn.Model(metadata, net);
     }
 };
 
@@ -110,8 +107,7 @@ mnn.Graph = class {
                     const tensor = op ? mnn.Utility.createTensor(op.main, 'Const') : null;
                     const argument = new mnn.Argument(name, null, tensor);
                     args.set(index, argument);
-                }
-                else {
+                } else {
                     const extraTensorDescribe = net.extraTensorDescribe[index];
                     const blob = extraTensorDescribe ? extraTensorDescribe.blob : null;
                     const type = blob && blob.dims && blob.dims.length > 0 ? new mnn.TensorType(blob.dataType, new mnn.TensorShape(blob.dims), blob.dataFormat) : null;
@@ -126,8 +122,7 @@ mnn.Graph = class {
             if (op.type === mnn.schema.OpType.Input) {
                 const args = Array.from(op.outputIndexes).map((index) => arg(index));
                 this._inputs.push(new mnn.Parameter(op.name, true, args));
-            }
-            else {
+            } else {
                 this._nodes.push(new mnn.Node(metadata, op, net, arg));
             }
         }
@@ -183,8 +178,7 @@ mnn.Node = class {
                 const parameter = new mnn.Parameter('value', true, [ argument ]);
                 this._inputs.push(parameter);
                 parameters.splice(0, parameters.length);
-            }
-            else if (param instanceof mnn.schema.Convolution2D) {
+            } else if (param instanceof mnn.schema.Convolution2D) {
                 const common = param.common;
                 const outputCount = common.outputCount;
                 const inputCount = common.inputCount;
@@ -196,8 +190,7 @@ mnn.Node = class {
                 delete param.bias;
                 delete param.quanParameter;
                 delete param.symmetricQuan;
-            }
-            else if (param instanceof mnn.schema.InnerProduct) {
+            } else if (param instanceof mnn.schema.InnerProduct) {
                 const outputCount = param.outputCount;
                 const inputCount = param.weightSize / outputCount;
                 this._buildTensor('weight', mnn.schema.DataType.DT_FLOAT, [ outputCount, inputCount ], param.weight);
@@ -205,15 +198,13 @@ mnn.Node = class {
                 delete param.weight;
                 delete param.bias;
                 delete param.quanParameter;
-            }
-            else if (param instanceof mnn.schema.Scale) {
+            } else if (param instanceof mnn.schema.Scale) {
                 const scaleDataCount = param.channels;
                 this._buildTensor('scale', mnn.schema.DataType.DT_FLOAT, [ scaleDataCount ], param.scaleData);
                 this._buildTensor('bias', mnn.schema.DataType.DT_FLOAT, [ scaleDataCount ], param.biasData);
                 delete param.scaleData;
                 delete param.biasData;
-            }
-            else if (param instanceof mnn.schema.BatchNorm) {
+            } else if (param instanceof mnn.schema.BatchNorm) {
                 const channels = param.channels;
                 this._buildTensor('mean', mnn.schema.DataType.DT_FLOAT, [ channels ], param.meanData);
                 this._buildTensor('slope', mnn.schema.DataType.DT_FLOAT, [ channels ], param.slopeData);
@@ -223,12 +214,10 @@ mnn.Node = class {
                 delete param.meanData;
                 delete param.varData;
                 delete param.biasData;
-            }
-            else if (param instanceof mnn.schema.PRelu) {
+            } else if (param instanceof mnn.schema.PRelu) {
                 this._buildTensor('slope', mnn.schema.DataType.DT_FLOAT, [ param.slopeCount ], param.slope);
                 delete param.slopeCount;
-            }
-            else if (param instanceof mnn.schema.Normalize) {
+            } else if (param instanceof mnn.schema.Normalize) {
                 this._buildTensor('scale', mnn.schema.DataType.DT_FLOAT, [ param.scale.length ], param.scale);
                 delete param.scale;
             }

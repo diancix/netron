@@ -51,14 +51,16 @@ view.View = class {
                 }
             }, { passive: true });
             this._host.document.addEventListener('keydown', () => {
-                this.clearSelection();
+                this.select(null);
+            });
+            const platform = this._host.environment('platform');
+            this._menu = new view.Menu(this._host);
+            this._menu.add({
+                accelerator: platform === 'darwin' ? 'Ctrl+Cmd+F' : 'F11',
+                execute: () => this._host.execute('fullscreen')
             });
             if (this._host.environment('menu')) {
-                const button = this._element('menu-button');
-                const element = this._element('menu');
-                this._menu = new view.Menu(this._host, element, button);
-            }
-            if (this._host.environment('menu')) {
+                this._menu.attach(this._element('menu'), this._element('menu-button'));
                 const file = this._menu.group('&File');
                 file.add({
                     label: '&Open...',
@@ -66,10 +68,7 @@ view.View = class {
                     execute: () => this._host.execute('open')
                 });
                 if (this._host.type === 'Electron') {
-                    this._recents = file.group({
-                        label: 'Open &Recent',
-                        accelerator: '&#10095;',
-                    });
+                    this._recents = file.group('Open &Recent');
                     file.add({
                         label: '&Export...',
                         accelerator: 'CmdOrCtrl+Shift+E',
@@ -77,17 +76,16 @@ view.View = class {
                         enabled: () => this.activeGraph
                     });
                     file.add({
-                        label: this._host.environment('platform') === 'darwin' ? '&Close Window' : '&Close',
+                        label: platform === 'darwin' ? '&Close Window' : '&Close',
                         accelerator: 'CmdOrCtrl+W',
                         execute: () => this._host.execute('close'),
                     });
                     file.add({
-                        label: this._host.environment('platform') === 'win32' ? 'E&xit' : '&Quit',
-                        accelerator: this._host.environment('platform') === 'win32' ? '' : 'CmdOrCtrl+Q',
+                        label: platform === 'win32' ? 'E&xit' : '&Quit',
+                        accelerator: platform === 'win32' ? '' : 'CmdOrCtrl+Q',
                         execute: () => this._host.execute('quit'),
                     });
-                }
-                else {
+                } else {
                     file.add({
                         label: 'Export as &PNG',
                         accelerator: 'CmdOrCtrl+Shift+E',
@@ -143,7 +141,7 @@ view.View = class {
                 if (this._host.type === 'Electron') {
                     view.add({
                         label: '&Reload',
-                        accelerator: this._host.environment('platform') === 'darwin' ? 'CmdOrCtrl+R' : 'F5',
+                        accelerator: platform === 'darwin' ? 'CmdOrCtrl+R' : 'F5',
                         execute: () => this._host.execute('reload'),
                         enabled: () => this.activeGraph
                     });
@@ -174,18 +172,22 @@ view.View = class {
                     execute: () => this.showModelProperties(),
                     enabled: () => this.activeGraph
                 });
+                if (this._host.type === 'Electron' && !this._host.environment('packaged')) {
+                    view.add({});
+                    view.add({
+                        label: '&Developer Tools...',
+                        accelerator: 'CmdOrCtrl+Alt+I',
+                        execute: () => this._host.execute('toggle-developer-tools')
+                    });
+                }
                 const help = this._menu.group('&Help');
                 help.add({
                     label: 'Report &Issue',
                     execute: () => this._host.execute('report-issue')
                 });
                 help.add({
-                    label: '&About ' + this._host.document.title,
+                    label: '&About ' + this._host.environment('name'),
                     execute: () => this._host.execute('about')
-                });
-                this._element('menu-button').addEventListener('click', (e) => {
-                    this._menu.toggle();
-                    e.preventDefault();
                 });
             }
             this._host.start();
@@ -204,12 +206,14 @@ view.View = class {
         if (this._sidebar) {
             this._sidebar.close();
         }
+        if (this._menu) {
+            this._menu.close();
+        }
         this._host.document.body.classList.remove(...Array.from(this._host.document.body.classList).filter((_) => _ !== 'active'));
         this._host.document.body.classList.add(...page.split(' '));
         if (page === 'default') {
             this._activate();
-        }
-        else {
+        } else {
             this._deactivate();
         }
         if (page === 'welcome') {
@@ -246,16 +250,46 @@ view.View = class {
 
     find() {
         if (this._graph) {
-            this.clearSelection();
-            const graphElement = this._element('canvas');
-            const content = new view.FindSidebar(this._host, graphElement, this._graph);
+            this.select(null);
+            const content = new view.FindSidebar(this._host, this._graph);
             content.on('search-text-changed', (sender, text) => {
                 this._searchText = text;
             });
-            content.on('select', (sender, selection) => {
-                this.select(selection);
+            content.on('select', (sender, identifier) => {
+                const selection = [];
+                const graphElement = this._element('canvas');
+                const nodesElement = graphElement.getElementById('nodes');
+                let nodeElement = nodesElement.firstChild;
+                while (nodeElement) {
+                    if (nodeElement.id == identifier) {
+                        selection.push(nodeElement);
+                    }
+                    nodeElement = nodeElement.nextSibling;
+                }
+                const edgePathsElement = graphElement.getElementById('edge-paths');
+                let edgePathElement = edgePathsElement.firstChild;
+                while (edgePathElement) {
+                    if (edgePathElement.id == identifier) {
+                        selection.push(edgePathElement);
+                    }
+                    edgePathElement = edgePathElement.nextSibling;
+                }
+                let initializerElement = graphElement.getElementById(identifier);
+                if (initializerElement) {
+                    while (initializerElement.parentElement) {
+                        initializerElement = initializerElement.parentElement;
+                        if (initializerElement.id && initializerElement.id.startsWith('node-')) {
+                            selection.push(initializerElement);
+                            break;
+                        }
+                    }
+                }
+                if (selection.length > 0) {
+                    this.select(selection);
+                    this.scrollTo(selection);
+                }
             });
-            this._sidebar.open(content.content, 'Find');
+            this._sidebar.open(content.render(), 'Find');
             content.focus(this._searchText);
         }
     }
@@ -288,23 +322,17 @@ view.View = class {
         }
     }
 
-    update(name, value) {
-        switch (name) {
-            case 'recents':
-                if (this._recents) {
-                    this._recents.clear();
-                    for (let i = 0; i < value.length; i++) {
-                        const path = value[i].path;
-                        this._recents.add({
-                            label: path,
-                            accelerator: 'CmdOrCtrl+' + (i + 1).toString(),
-                            execute: () => this._host.execute('open', path)
-                        });
-                    }
-                }
-                break;
-            default:
-                break;
+    recents(recents) {
+        if (this._recents) {
+            this._recents.clear();
+            for (let i = 0; i < recents.length; i++) {
+                const recent = recents[i];
+                this._recents.add({
+                    label: recent.label,
+                    accelerator: 'CmdOrCtrl+' + (i + 1).toString(),
+                    execute: () => this._host.execute('open', recent.path)
+                });
+            }
         }
     }
 
@@ -319,11 +347,9 @@ view.View = class {
         }
     }
 
-    _timeout(time) {
+    _timeout(delay) {
         return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve();
-            }, time);
+            setTimeout(resolve, delay);
         });
     }
 
@@ -348,21 +374,18 @@ view.View = class {
             this._events = {};
             this._events.scroll = (e) => this._scrollHandler(e);
             this._events.wheel = (e) => this._wheelHandler(e);
-            this._events.mousedown = (e) => this._mouseDownHandler(e);
             this._events.gesturestart = (e) => this._gestureStartHandler(e);
+            this._events.pointerdown = (e) => this._pointerDownHandler(e);
             this._events.touchstart = (e) => this._touchStartHandler(e);
         }
         const graph = this._element('graph');
-        if (graph) {
-            graph.focus();
-        }
+        graph.focus();
         graph.addEventListener('scroll', this._events.scroll);
         graph.addEventListener('wheel', this._events.wheel, { passive: false });
-        graph.addEventListener('mousedown', this._events.mousedown);
+        graph.addEventListener('pointerdown', this._events.pointerdown);
         if (this._host.environment('agent') === 'safari') {
             graph.addEventListener('gesturestart', this._events.gesturestart, false);
-        }
-        else {
+        } else {
             graph.addEventListener('touchstart', this._events.touchstart, { passive: true });
         }
     }
@@ -372,7 +395,7 @@ view.View = class {
             const graph = this._element('graph');
             graph.removeEventListener('scroll', this._events.scroll);
             graph.removeEventListener('wheel', this._events.wheel);
-            graph.removeEventListener('mousedown', this._events.mousedown);
+            graph.removeEventListener('pointerdown', this._events.pointerdown);
             graph.removeEventListener('gesturestart', this._events.gesturestart);
             graph.removeEventListener('touchstart', this._events.touchstart);
         }
@@ -401,8 +424,9 @@ view.View = class {
         this._zoom = zoom;
     }
 
-    _mouseDownHandler(e) {
-        if (e.buttons === 1) {
+    _pointerDownHandler(e) {
+        if (e.pointerType !== 'touch' && e.buttons === 1) {
+            e.target.setPointerCapture(e.pointerId);
             const document = this._host.document.documentElement;
             const container = this._element('graph');
             this._mousePosition = {
@@ -411,10 +435,9 @@ view.View = class {
                 x: e.clientX,
                 y: e.clientY
             };
-            const background = this._element('background');
-            background.setAttribute('cursor', 'grabbing');
+            container.style.cursor = 'grabbing';
             e.stopImmediatePropagation();
-            const mouseMoveHandler = (e) => {
+            const pointerMoveHandler = (e) => {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 const dx = e.clientX - this._mousePosition.x;
@@ -426,11 +449,12 @@ view.View = class {
                     container.scrollLeft = this._mousePosition.left - dx;
                 }
             };
-            const mouseUpHandler = () => {
-                background.setAttribute('cursor', 'default');
-                container.removeEventListener('mouseup', mouseUpHandler);
-                container.removeEventListener('mouseleave', mouseUpHandler);
-                container.removeEventListener('mousemove', mouseMoveHandler);
+            const pointerUpHandler = () => {
+                e.target.releasePointerCapture(e.pointerId);
+                container.style.removeProperty('cursor');
+                container.removeEventListener('pointerup', pointerUpHandler);
+                container.removeEventListener('pointerleave', pointerUpHandler);
+                container.removeEventListener('pointermove', pointerMoveHandler);
                 if (this._mousePosition && this._mousePosition.moved) {
                     e.preventDefault();
                     e.stopImmediatePropagation();
@@ -442,9 +466,9 @@ view.View = class {
                 e.stopPropagation();
                 document.removeEventListener('click', clickHandler, true);
             };
-            container.addEventListener('mousemove', mouseMoveHandler);
-            container.addEventListener('mouseup', mouseUpHandler);
-            container.addEventListener('mouseleave', mouseUpHandler);
+            container.addEventListener('pointermove', pointerMoveHandler);
+            container.addEventListener('pointerup', pointerUpHandler);
+            container.addEventListener('pointerleave', pointerUpHandler);
         }
     }
 
@@ -524,15 +548,12 @@ view.View = class {
         }
     }
 
-    select(selection) {
-        this.clearSelection();
+    scrollTo(selection) {
         if (selection && selection.length > 0) {
             const container = this._element('graph');
             let x = 0;
             let y = 0;
             for (const element of selection) {
-                element.classList.add('select');
-                this._selection.push(element);
                 const rect = element.getBoundingClientRect();
                 x += rect.left + (rect.width / 2);
                 y += rect.top + (rect.height / 2);
@@ -546,19 +567,33 @@ view.View = class {
         }
     }
 
-    clearSelection() {
+    select(selection) {
         while (this._selection.length > 0) {
             const element = this._selection.pop();
+            // if (element && element.parentElement) {
             element.classList.remove('select');
+            // const node = element.cloneNode(true);
+            // element.parentElement.replaceChild(node, element);
+            // }
+        }
+        if (selection && selection.length > 0) {
+            for (const element of selection) {
+                element.classList.add('select');
+                /* TODO */
+                this._selection.push(element);
+                /* TODO */
+                // const node = element.cloneNode(true);
+                // element.parentElement.replaceChild(node, element);
+                // this._selection.push(node);
+            }
         }
     }
 
-    error(err, name, screen) {
+    async error(err, name, screen) {
         if (this._sidebar) {
             this._sidebar.close();
         }
         this._host.exception(err, false);
-
         const knowns = [
             { name: '', message: /^Invalid argument identifier/, url: 'https://github.com/lutzroeder/netron/issues/540' },
             { name: '', message: /^Cannot read property/, url: 'https://github.com/lutzroeder/netron/issues/647' },
@@ -588,7 +623,11 @@ view.View = class {
         const known = knowns.find((known) => (known.name.length === 0 || known.name === err.name) && err.message.match(known.message));
         const message = err.message;
         name = name || err.name;
-        this._host.error(name, message, known ? known.url : undefined);
+        const button = await this._host.error(name, message);
+        const url = known && known.url ? known.url : null;
+        if (button === 0 && (url || this._host.type == 'Electron')) {
+            this._host.openURL(url || this._host.environment('repository') + '/issues');
+        }
         this.show(screen !== undefined ? screen : 'welcome');
     }
 
@@ -596,49 +635,49 @@ view.View = class {
         return this._modelFactoryService.accept(file, size);
     }
 
-    open(context) {
+    async open(context) {
         this._sidebar.close();
-        return this._timeout(2).then(() => {
-            return this._modelFactoryService.open(context).then((model) => {
-                const format = [];
-                if (model.format) {
-                    format.push(model.format);
-                }
-                if (model.producer) {
-                    format.push('(' + model.producer + ')');
-                }
-                if (format.length > 0) {
-                    this._host.event_ua('Model', 'Format', format.join(' '));
-                    this._host.event('model_open', {
-                        model_format: model.format || '',
-                        model_producer: model.producer || ''
-                    });
-                }
-                return this._timeout(20).then(() => {
-                    const graphs = Array.isArray(model.graphs) && model.graphs.length > 0 ? [ model.graphs[0] ] : [];
-                    return this._updateGraph(model, graphs);
+        await this._timeout(2);
+        try {
+            const model = await this._modelFactoryService.open(context);
+            const format = [];
+            if (model.format) {
+                format.push(model.format);
+            }
+            if (model.producer) {
+                format.push('(' + model.producer + ')');
+            }
+            if (format.length > 0) {
+                this._host.event_ua('Model', 'Format', format.join(' '));
+                this._host.event('model_open', {
+                    model_format: model.format || '',
+                    model_producer: model.producer || ''
                 });
-            }).catch((error) => {
-                if (error && context.identifier) {
-                    error.context = context.identifier;
-                }
-                throw error;
-            });
-        });
+            }
+            await this._timeout(20);
+            const graphs = Array.isArray(model.graphs) && model.graphs.length > 0 ? [ model.graphs[0] ] : [];
+            return await this._updateGraph(model, graphs);
+        } catch (error) {
+            if (error && context.identifier) {
+                error.context = context.identifier;
+            }
+            throw error;
+        }
     }
 
-    _updateActiveGraph(graph) {
+    async _updateActiveGraph(graph) {
         this._sidebar.close();
         if (this._model) {
             const model = this._model;
             this.show('welcome spinner');
-            this._timeout(200).then(() => {
-                return this._updateGraph(model, [ graph ]).catch((error) => {
-                    if (error) {
-                        this.error(error, 'Graph update failed.', 'welcome');
-                    }
-                });
-            });
+            await this._timeout(200);
+            try {
+                await this._updateGraph(model, [ graph ]);
+            } catch (error) {
+                if (error) {
+                    this.error(error, 'Graph update failed.', 'welcome');
+                }
+            }
         }
     }
 
@@ -646,58 +685,56 @@ view.View = class {
         return Array.isArray(this._graphs) && this._graphs.length > 0 ? this._graphs[0] : null;
     }
 
-    _updateGraph(model, graphs) {
-        return this._timeout(100).then(() => {
-            const graph = Array.isArray(graphs) && graphs.length > 0 ? graphs[0] : null;
-            if (graph && graph != this._graphs[0]) {
-                const nodes = graph.nodes;
-                if (nodes.length > 2048) {
-                    if (!this._host.confirm('Large model detected.', 'This graph contains a large number of nodes and might take a long time to render. Do you want to continue?')) {
-                        this._host.event('graph_view', {
-                            graph_node_count: nodes.length,
-                            graph_skip: 1 }
-                        );
-                        this.show(null);
-                        return null;
-                    }
+    async _updateGraph(model, graphs) {
+        await this._timeout(100);
+        const graph = Array.isArray(graphs) && graphs.length > 0 ? graphs[0] : null;
+        if (graph && graph != this._graphs[0]) {
+            const nodes = graph.nodes;
+            if (nodes.length > 2048) {
+                if (!this._host.confirm('Large model detected.', 'This graph contains a large number of nodes and might take a long time to render. Do you want to continue?')) {
+                    this._host.event('graph_view', {
+                        graph_node_count: nodes.length,
+                        graph_skip: 1 }
+                    );
+                    this.show(null);
+                    return null;
                 }
             }
-            const update = () => {
-                const nameButton = this._element('name-button');
-                const backButton = this._element('back-button');
-                if (this._graphs.length > 1) {
-                    const graph = this.activeGraph;
-                    nameButton.innerHTML = graph ? graph.name : '';
-                    backButton.style.opacity = 1;
-                    nameButton.style.opacity = 1;
-                }
-                else {
-                    backButton.style.opacity = 0;
-                    nameButton.style.opacity = 0;
-                }
-            };
-            const lastModel = this._model;
-            const lastGraphs = this._graphs;
-            this._model = model;
-            this._graphs = graphs;
-            return this.renderGraph(this._model, this.activeGraph).then(() => {
-                if (this._page !== 'default') {
-                    this.show('default');
-                }
-                update();
-                return this._model;
-            }).catch((error) => {
-                this._model = lastModel;
-                this._graphs = lastGraphs;
-                return this.renderGraph(this._model, this.activeGraph).then(() => {
-                    if (this._page !== 'default') {
-                        this.show('default');
-                    }
-                    update();
-                    throw error;
-                });
-            });
-        });
+        }
+        const update = () => {
+            const nameButton = this._element('name-button');
+            const backButton = this._element('back-button');
+            if (this._graphs.length > 1) {
+                const graph = this.activeGraph;
+                nameButton.innerHTML = graph ? graph.name : '';
+                backButton.style.opacity = 1;
+                nameButton.style.opacity = 1;
+            } else {
+                backButton.style.opacity = 0;
+                nameButton.style.opacity = 0;
+            }
+        };
+        const lastModel = this._model;
+        const lastGraphs = this._graphs;
+        this._model = model;
+        this._graphs = graphs;
+        try {
+            await this.renderGraph(this._model, this.activeGraph);
+            if (this._page !== 'default') {
+                this.show('default');
+            }
+            update();
+            return this._model;
+        } catch (error) {
+            this._model = lastModel;
+            this._graphs = lastGraphs;
+            await this.renderGraph(this._model, this.activeGraph);
+            if (this._page !== 'default') {
+                this.show('default');
+            }
+            update();
+            throw error;
+        }
     }
 
     pushGraph(graph) {
@@ -715,122 +752,113 @@ view.View = class {
         return null;
     }
 
-    renderGraph(model, graph) {
-        try {
-            this._graph = null;
+    async renderGraph(model, graph) {
+        this._graph = null;
 
-            const canvas = this._element('canvas');
-            while (canvas.lastChild) {
-                canvas.removeChild(canvas.lastChild);
-            }
-            if (!graph) {
-                return Promise.resolve();
-            }
-            this._zoom = 1;
-
-            const groups = graph.groups;
-            const nodes = graph.nodes;
-            this._host.event('graph_view', {
-                graph_node_count: nodes.length,
-                graph_skip: 0
-            });
-
-            const options = {};
-            options.nodesep = 20;
-            options.ranksep = 20;
-            const rotate = graph.nodes.every((node) => node.inputs.filter((input) => input.arguments.every((argument) => !argument.initializer)).length === 0 && node.outputs.length === 0);
-            const horizontal = rotate ? this._options.direction === 'vertical' : this._options.direction !== 'vertical';
-            if (horizontal) {
-                options.rankdir = "LR";
-            }
-            if (nodes.length > 3000) {
-                options.ranker = 'longest-path';
-            }
-
-            const viewGraph = new view.Graph(this, model, groups, options);
-            viewGraph.add(graph);
-
-            // Workaround for Safari background drag/zoom issue:
-            // https://stackoverflow.com/questions/40887193/d3-js-zoom-is-not-working-with-mousewheel-in-safari
-            const background = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            background.setAttribute('id', 'background');
-            background.setAttribute('fill', 'none');
-            background.setAttribute('pointer-events', 'all');
-            canvas.appendChild(background);
-
-            const origin = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            origin.setAttribute('id', 'origin');
-            canvas.appendChild(origin);
-
-            viewGraph.build(this._host.document, origin);
-
-            this._zoom = 1;
-
-            return this._timeout(20).then(() => {
-
-                viewGraph.update();
-
-                const elements = Array.from(canvas.getElementsByClassName('graph-input') || []);
-                if (elements.length === 0) {
-                    const nodeElements = Array.from(canvas.getElementsByClassName('graph-node') || []);
-                    if (nodeElements.length > 0) {
-                        elements.push(nodeElements[0]);
-                    }
-                }
-
-                const size = canvas.getBBox();
-                const margin = 100;
-                const width = Math.ceil(margin + size.width + margin);
-                const height = Math.ceil(margin + size.height + margin);
-                origin.setAttribute('transform', 'translate(' + margin.toString() + ', ' + margin.toString() + ') scale(1)');
-                background.setAttribute('width', width);
-                background.setAttribute('height', height);
-                this._width = width;
-                this._height = height;
-                delete this._scrollLeft;
-                delete this._scrollRight;
-                canvas.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
-                canvas.setAttribute('width', width);
-                canvas.setAttribute('height', height);
-
-                this._zoom = 1;
-                this._updateZoom(this._zoom);
-
-                const container = this._element('graph');
-                if (elements && elements.length > 0) {
-                    // Center view based on input elements
-                    const xs = [];
-                    const ys = [];
-                    for (let i = 0; i < elements.length; i++) {
-                        const element = elements[i];
-                        const rect = element.getBoundingClientRect();
-                        xs.push(rect.left + (rect.width / 2));
-                        ys.push(rect.top + (rect.height / 2));
-                    }
-                    let x = xs[0];
-                    const y = ys[0];
-                    if (ys.every(y => y === ys[0])) {
-                        x = xs.reduce((a, b) => a + b, 0) / xs.length;
-                    }
-                    const graphRect = container.getBoundingClientRect();
-                    const left = (container.scrollLeft + x - graphRect.left) - (graphRect.width / 2);
-                    const top = (container.scrollTop + y - graphRect.top) - (graphRect.height / 2);
-                    container.scrollTo({ left: left, top: top, behavior: 'auto' });
-                }
-                else {
-                    const canvasRect = canvas.getBoundingClientRect();
-                    const graphRect = container.getBoundingClientRect();
-                    const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
-                    const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
-                    container.scrollTo({ left: left, top: top, behavior: 'auto' });
-                }
-                this._graph = viewGraph;
-                return;
-            });
+        const canvas = this._element('canvas');
+        while (canvas.lastChild) {
+            canvas.removeChild(canvas.lastChild);
         }
-        catch (error) {
-            return Promise.reject(error);
+        if (!graph) {
+            return;
         }
+        this._zoom = 1;
+
+        const groups = graph.groups;
+        const nodes = graph.nodes;
+        this._host.event('graph_view', {
+            graph_node_count: nodes.length,
+            graph_skip: 0
+        });
+
+        const options = {};
+        options.nodesep = 20;
+        options.ranksep = 20;
+        const rotate = graph.nodes.every((node) => node.inputs.filter((input) => input.arguments.every((argument) => !argument.initializer)).length === 0 && node.outputs.length === 0);
+        const horizontal = rotate ? this._options.direction === 'vertical' : this._options.direction !== 'vertical';
+        if (horizontal) {
+            options.rankdir = "LR";
+        }
+        if (nodes.length > 3000) {
+            options.ranker = 'longest-path';
+        }
+
+        const viewGraph = new view.Graph(this, model, groups, options);
+        viewGraph.add(graph);
+
+        // Workaround for Safari background drag/zoom issue:
+        // https://stackoverflow.com/questions/40887193/d3-js-zoom-is-not-working-with-mousewheel-in-safari
+        const background = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        background.setAttribute('id', 'background');
+        background.setAttribute('fill', 'none');
+        background.setAttribute('pointer-events', 'all');
+        canvas.appendChild(background);
+
+        const origin = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        origin.setAttribute('id', 'origin');
+        canvas.appendChild(origin);
+
+        viewGraph.build(this._host.document, origin);
+
+        this._zoom = 1;
+
+        await this._timeout(20);
+
+        viewGraph.update();
+
+        const elements = Array.from(canvas.getElementsByClassName('graph-input') || []);
+        if (elements.length === 0) {
+            const nodeElements = Array.from(canvas.getElementsByClassName('graph-node') || []);
+            if (nodeElements.length > 0) {
+                elements.push(nodeElements[0]);
+            }
+        }
+        const size = canvas.getBBox();
+        const margin = 100;
+        const width = Math.ceil(margin + size.width + margin);
+        const height = Math.ceil(margin + size.height + margin);
+        origin.setAttribute('transform', 'translate(' + margin.toString() + ', ' + margin.toString() + ') scale(1)');
+        background.setAttribute('width', width);
+        background.setAttribute('height', height);
+        this._width = width;
+        this._height = height;
+        delete this._scrollLeft;
+        delete this._scrollRight;
+        canvas.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+        canvas.setAttribute('width', width);
+        canvas.setAttribute('height', height);
+
+        this._zoom = 1;
+        this._updateZoom(this._zoom);
+
+        const container = this._element('graph');
+        if (elements && elements.length > 0) {
+            // Center view based on input elements
+            const xs = [];
+            const ys = [];
+            for (let i = 0; i < elements.length; i++) {
+                const element = elements[i];
+                const rect = element.getBoundingClientRect();
+                xs.push(rect.left + (rect.width / 2));
+                ys.push(rect.top + (rect.height / 2));
+            }
+            let x = xs[0];
+            const y = ys[0];
+            if (ys.every(y => y === ys[0])) {
+                x = xs.reduce((a, b) => a + b, 0) / xs.length;
+            }
+            const graphRect = container.getBoundingClientRect();
+            const left = (container.scrollLeft + x - graphRect.left) - (graphRect.width / 2);
+            const top = (container.scrollTop + y - graphRect.top) - (graphRect.height / 2);
+            container.scrollTo({ left: left, top: top, behavior: 'auto' });
+        } else {
+            const canvasRect = canvas.getBoundingClientRect();
+            const graphRect = container.getBoundingClientRect();
+            const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
+            const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
+            container.scrollTo({ left: left, top: top, behavior: 'auto' });
+        }
+        this._graph = viewGraph;
     }
 
     applyStyleSheet(element, name) {
@@ -911,8 +939,7 @@ view.View = class {
                     canvas.toBlob((blob) => {
                         if (blob) {
                             this._host.export(file, blob);
-                        }
-                        else {
+                        } else {
                             const error = new Error('Image may be too large to render as PNG.');
                             error.name = 'Error exporting image.';
                             this._host.exception(error, false);
@@ -934,8 +961,7 @@ view.View = class {
                 });
                 const content = modelSidebar.render();
                 this._sidebar.open(content, 'Model Properties');
-            }
-            catch (error) {
+            } catch (error) {
                 if (error) {
                     error.context = this._model.identifier;
                 }
@@ -947,6 +973,9 @@ view.View = class {
     showNodeProperties(node, input) {
         if (node) {
             try {
+                if (this._menu) {
+                    this._menu.close();
+                }
                 const nodeSidebar = new view.NodeSidebar(this._host, node);
                 nodeSidebar.on('show-documentation', (/* sender, e */) => {
                     this.showDocumentation(node.type);
@@ -970,8 +999,7 @@ view.View = class {
                             bytes.seek(0);
                             const blob = new Blob([ bytes.read() ], { type: 'application/octet-stream' });
                             this._host.export(file, blob);
-                        }
-                        catch (error) {
+                        } catch (error) {
                             this.error(error, 'Error saving NumPy tensor.', null);
                         }
                     });
@@ -982,12 +1010,28 @@ view.View = class {
                     }
                     this.error(error, null, null);
                 });
+                nodeSidebar.on('activate', (sender, argument) => {
+                    const name = 'edge-' + argument.name;
+                    const selection = [];
+                    const graphElement = this._element('canvas');
+                    const edgePathsElement = graphElement.getElementById('edge-paths');
+                    let element = edgePathsElement.firstChild;
+                    while (element) {
+                        if (element.id == name) {
+                            selection.push(element);
+                        }
+                        element = element.nextSibling;
+                    }
+                    this.select(selection);
+                });
+                nodeSidebar.on('deactivate', () => {
+                    this.select(null);
+                });
                 if (input) {
                     nodeSidebar.toggleInput(input.name);
                 }
                 this._sidebar.open(nodeSidebar.render(), 'Node Properties');
-            }
-            catch (error) {
+            } catch (error) {
                 if (error) {
                     error.context = this._model.identifier;
                 }
@@ -1009,146 +1053,370 @@ view.View = class {
             this._sidebar.push(documentationSidebar.render(), title);
         }
     }
+
+    about() {
+        this._host.document.getElementById('version').innerText = this._host.version;
+        const handler = () => {
+            this._host.window.removeEventListener('keydown', handler);
+            this._host.document.body.removeEventListener('click', handler);
+            this._host.document.body.classList.remove('about');
+        };
+        this._host.window.addEventListener('keydown', handler);
+        this._host.document.body.addEventListener('click', handler);
+        this._host.document.body.classList.add('about');
+    }
 };
 
 view.Menu = class {
 
-    constructor(host, element, button) {
+    constructor(host) {
         this.items = [];
-        this._host = host;
-        this._element = element;
-        this._button = button;
-        this._darwin = this._host.environment('platform') === 'darwin';
-        this._accelerators = new Map();
+        this._darwin = host.environment('platform') === 'darwin';
+        this._document = host.document;
         this._stack = [];
-        this._codes = new Map([
-            [ 'Backspace', 0x08 ], [ 'Enter', 0x0D ],
-            [ 'Up', 0x26 ], [ 'Down', 0x28 ],
-            [ 'F5', 0x74 ]
+        this._root = [];
+        this._buttons = [];
+        this._accelerators = new Map();
+        this._keyCodes = new Map([
+            [ 'Backspace', 0x08 ], [ 'Enter', 0x0D ], [ 'Escape', 0x1B ],
+            [ 'Left', 0x25 ], [ 'Up', 0x26 ], [ 'Right', 0x27 ], [ 'Down', 0x28 ],
+            [ 'F5', 0x74 ], [ 'F11', 0x7a ]
         ]);
         this._symbols = new Map([
             [ 'Backspace', '&#x232B;' ], [ 'Enter', '&#x23ce;' ],
             [ 'Up', '&#x2191;' ], [ 'Down', '&#x2193;' ],
         ]);
-        this._host.window.addEventListener('keydown', (e) => {
-            this._pop = false;
-            let code = e.keyCode;
-            code |= ((e.ctrlKey && !this._darwin) || (e.metaKey && this._darwin)) ? 0x0400 : 0;
-            code |= e.altKey ? 0x0200 : 0;
-            code |= e.shiftKey ? 0x0100 : 0;
-            if (code === 0x001b) { // Escape
-                if (this._stack.length > 0) {
-                    this._stack.pop();
-                    this._update();
-                }
-                if (this._stack.length === 0) {
-                    this._close();
-                }
-            }
-            else if (code === 0x0212) { // Alt
-                if (this._stack.length === 0) {
-                    this.toggle();
-                    this._stack = [ this ];
-                    this._update();
-                }
-                else {
-                    this._pop = true;
-                }
-            }
-            else if ((this._stack.length > 0 && (code & 0xFD00) === 0) && (code & 0x00FF) != 0) {
-                const key = String.fromCharCode(code & 0x00FF);
-                const group = this._stack[this._stack.length - 1];
-                for (const item of group.items) {
-                    if (key === item.mnemonic) {
-                        if (item.type === 'group' && item.enabled) {
-                            e.preventDefault();
-                            this._stack.push(item);
-                            this._update();
-                        }
-                        else if (item.type === 'command' && item.enabled) {
-                            item.execute();
-                            e.preventDefault();
-                            this._close();
-                        }
+        this._keydown = (e) => {
+            this._alt = false;
+            const code = e.keyCode | (e.altKey ? 0x0200 : 0) | (e.shiftKey ? 0x0100 : 0);
+            const modifier = (e.ctrlKey ? 0x0400 : 0) | (e.metaKey ? 0x0800 : 0);
+            if ((code | modifier) === 0x0212) { // Alt
+                this._alt = true;
+            } else {
+                const action =
+                    this._accelerators.get(code | modifier) ||
+                    this._accelerators.get(code | ((e.ctrlKey && !this._darwin) || (e.metaKey && this._darwin) ? 0x1000 : 0));
+                if (action && this._execute(action)) {
+                    e.preventDefault();
+                } else {
+                    const item = this._mnemonic(code | modifier);
+                    if (item && this._activate(item)) {
+                        e.preventDefault();
                     }
                 }
             }
-            else {
-                const item = this._accelerators.get(code.toString());
-                if (item && item.enabled) {
-                    item.execute();
-                    e.preventDefault();
-                    this._close();
-                }
-            }
-        });
-        this._host.window.addEventListener('keyup', (e) => {
+        };
+        this._keyup = (e) => {
             const code = e.keyCode;
-            if (code === 0x0012 && this._pop) { // Alt
-                if (this._stack.length === 1) {
-                    this._close();
-                }
-                else if (this._stack.length > 1) {
-                    this._stack = [ this ];
-                    this._update();
+            if (code === 0x0012 && this._alt) { // Alt
+                switch (this._stack.length) {
+                    case 0: {
+                        if (this.open()) {
+                            e.preventDefault();
+                        }
+                        break;
+                    }
+                    case 1: {
+                        if (this.close()) {
+                            e.preventDefault();
+                        }
+                        break;
+                    }
+                    default: {
+                        this._stack = [ this ];
+                        if (this._root.length > 1) {
+                            this._root =  [ this ];
+                            this._rebuild();
+                        }
+                        this._update();
+                        e.preventDefault();
+                        break;
+                    }
                 }
             }
-        });
-        this._host.document.body.addEventListener('click', (e) => {
-            if (!this._button.contains(e.target)) {
-                this._close();
+            this._alt = false;
+        };
+        this._next = () => {
+            const button = this._element.ownerDocument.activeElement;
+            const index = this._buttons.indexOf(button);
+            if (index !== -1 && index < this._buttons.length - 1) {
+                const next = this._buttons[index + 1];
+                next.focus();
             }
+        };
+        this._previous = () => {
+            const button = this._element.ownerDocument.activeElement;
+            const index = this._buttons.indexOf(button);
+            if (index > 0) {
+                const next = this._buttons[index - 1];
+                next.focus();
+            }
+        };
+        this._push = () => {
+            const button = this._element.ownerDocument.activeElement;
+            if (button && button.getAttribute('data-type') === 'group') {
+                button.click();
+            }
+        };
+        this._pop = () => {
+            if (this._stack.length > 1) {
+                this._deactivate();
+            }
+        };
+        this._exit = () => {
+            this._deactivate();
+            if (this._stack.length === 0) {
+                this.close();
+            }
+        };
+        host.window.addEventListener('keydown', this._keydown);
+        host.window.addEventListener('keyup', this._keyup);
+    }
+
+    attach(element, button) {
+        this._element = element;
+        button.addEventListener('click', (e) => {
+            this.toggle();
+            e.preventDefault();
         });
+    }
+
+    add(value) {
+        const item = new view.Menu.Command(value);
+        this.register(item, item.accelerator);
     }
 
     group(label) {
         const item = new view.Menu.Group(this, label);
         item.identifier = 'menu-item-' + this.items.length.toString();
         this.items.push(item);
-        this.register(item);
+        item.shortcut = this.register(item.accelerator);
         return item;
     }
 
     toggle() {
         if (this._element.style.opacity >= 1) {
             this.close();
+        } else {
+            this._root = [ this ];
+            this._stack = [ this ];
+            this.open();
         }
-        else {
-            this._reset();
+    }
+
+    open() {
+        if (this._element) {
+            if (this._stack.length === 0) {
+                this.toggle();
+                this._stack = [ this ];
+            }
+            this._rebuild();
+            this._update();
+            this.register(this._exit, 'Escape');
+            this.register(this._previous, 'Up');
+            this.register(this._next, 'Down');
+            this.register(this._pop, 'Left');
+            this.register(this._push, 'Right');
+        }
+    }
+
+    close() {
+        if (this._element) {
+            this.unregister(this._exit);
+            this.unregister(this._previous);
+            this.unregister(this._next);
+            this.unregister(this._pop);
+            this.unregister(this._push);
+            this._element.style.opacity = 0;
+            this._element.style.left = '-200px';
+            const button = this._element.ownerDocument.activeElement;
+            if (this._buttons.indexOf(button) > 0) {
+                button.blur();
+            }
+            while (this._root.length > 1) {
+                this._deactivate();
+            }
+            this._stack = [];
+        }
+    }
+
+    register(action, accelerator) {
+        let shortcut = '';
+        if (accelerator) {
+            let shift = false;
+            let alt = false;
+            let ctrl = false;
+            let cmd = false;
+            let cmdOrCtrl = false;
+            let key = '';
+            for (const part of accelerator.split('+')) {
+                switch (part) {
+                    case 'CmdOrCtrl': cmdOrCtrl = true; break;
+                    case 'Cmd': cmd = true; break;
+                    case 'Ctrl': ctrl = true; break;
+                    case 'Alt': alt = true; break;
+                    case 'Shift': shift = true; break;
+                    default: key = part; break;
+                }
+            }
+            if (key !== '') {
+                if (this._darwin) {
+                    shortcut += ctrl ? '&#x2303' : '';
+                    shortcut += alt ? '&#x2325;' : '';
+                    shortcut += shift ? '&#x21e7;' : '';
+                    shortcut += cmdOrCtrl || cmd ? '&#x2318;' : '';
+                    shortcut += this._symbols.has(key) ? this._symbols.get(key) : key;
+                } else {
+                    shortcut += cmdOrCtrl || ctrl ? 'Ctrl+' : '';
+                    shortcut += alt ? 'Alt+' : '';
+                    shortcut += shift ? 'Shift+' : '';
+                    shortcut += key;
+                }
+                let code = (cmdOrCtrl ? 0x1000 : 0) | (cmd ? 0x0800 : 0) | (ctrl ? 0x0400 : 0) | (alt ? 0x0200 : 0 | shift ? 0x0100 : 0);
+                code |= this._keyCodes.has(key) ? this._keyCodes.get(key) : key.charCodeAt(0);
+                this._accelerators.set(code, action);
+            }
+        }
+        return shortcut;
+    }
+
+    unregister(action) {
+        this._accelerators = new Map(Array.from(this._accelerators.entries()).filter((entry) => entry[1] !== action));
+    }
+
+    _execute(action) {
+        if (typeof action === 'function') {
+            action();
+            return true;
+        }
+        switch (action ? action.type : null) {
+            case 'group': {
+                while (this._stack.length > this._root.length) {
+                    this._stack.pop();
+                }
+                this._root.push({ items: [ action ] });
+                this._stack.push(action);
+                this._rebuild();
+                this._update();
+                return true;
+            }
+            case 'command': {
+                this.close();
+                setTimeout(() => action.execute(), 10);
+                return true;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    _mnemonic(code) {
+        const key = /[a-zA-Z0-9]/.test(String.fromCharCode(code & 0x00FF));
+        const modifier = (code & 0xFF00) !== 0;
+        const alt = (code & 0xFF00) === 0x0200;
+        if (alt && key) {
+            this.open();
+        }
+        if (this._stack.length > 0 && key && (alt || !modifier)) {
+            const key = String.fromCharCode(code & 0x00FF);
+            const group = this._stack.length > 0 ? this._stack[this._stack.length - 1] : this;
+            const item = group.items.find((item) => key === item.mnemonic && (item.type === 'group' || item.type === 'command') && item.enabled);
+            if (item) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    _activate(item) {
+        switch (item ? item.type : null) {
+            case 'group': {
+                this._stack.push(item);
+                this._rebuild();
+                this._update();
+                return true;
+            }
+            case 'command': {
+                return this._execute(item);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    _deactivate() {
+        if (this._root.length > 1) {
+            this._root.pop();
+            const group = this._stack.pop();
+            this._rebuild();
+            this._update();
+            if (group) {
+                const button = this._buttons.find((button) => button.getAttribute('id') === group.identifier);
+                if (button) {
+                    button.focus();
+                }
+            }
+        } else if (this._stack.length > 0) {
+            this._stack.pop();
             this._update();
         }
     }
 
-    _reset() {
+    _label(item, mnemonic) {
+        delete item.mnemonic;
+        const value = item.label;
+        if (value) {
+            const index = value.indexOf('&');
+            if (index !== -1) {
+                if (mnemonic) {
+                    item.mnemonic = value[index + 1].toUpperCase();
+                    return value.substring(0, index) + '<u>' + value[index + 1] + '</u>' + value.substring(index + 2);
+                }
+                return value.substring(0, index) + value.substring(index + 1);
+            }
+        }
+        return value || '';
+    }
+
+    _rebuild() {
         this._element.innerHTML = '';
-        for (const group of this.items) {
-            const container = this._host.document.createElement('div');
+        const root = this._root[this._root.length - 1];
+        for (const group of root.items) {
+            const container = this._document.createElement('div');
             container.setAttribute('id', group.identifier);
             container.setAttribute('class', 'menu-group');
             container.innerHTML = "<div class='menu-group-header'></div>";
             for (const item of group.items) {
                 switch (item.type) {
+                    case 'group':
                     case 'command': {
-                        const button = this._host.document.createElement('button');
-                        button.setAttribute('class', 'menu-item');
+                        const button = this._document.createElement('button');
+                        button.setAttribute('class', 'menu-command');
                         button.setAttribute('id', item.identifier);
-                        button.addEventListener('click', () => {
-                            this.close();
-                            setTimeout(() => {
-                                item.execute();
-                            }, 10);
-                        });
+                        button.setAttribute('data-type', item.type);
+                        button.addEventListener('mouseenter', () => button.focus());
+                        button.addEventListener('click', () => this._execute(item));
+                        const accelerator = this._document.createElement('span');
+                        accelerator.setAttribute('class', 'menu-shortcut');
+                        if (item.type === 'group') {
+                            accelerator.innerHTML = '&#10095;';
+                        } else if (item.shortcut) {
+                            accelerator.innerHTML = item.shortcut;
+                        }
+                        button.appendChild(accelerator);
+                        const content = this._document.createElement('span');
+                        content.setAttribute('class', 'menu-label');
+                        button.appendChild(content);
                         container.appendChild(button);
                         break;
                     }
                     case 'separator': {
-                        const element = this._host.document.createElement('div');
+                        const element = this._document.createElement('div');
                         element.setAttribute('class', 'menu-separator');
                         element.setAttribute('id', item.identifier);
                         container.appendChild(element);
-                        break;
-                    }
-                    case 'group': {
                         break;
                     }
                     default: {
@@ -1158,58 +1426,50 @@ view.Menu = class {
             }
             this._element.appendChild(container);
         }
-
         this._element.style.opacity = 1.0;
         this._element.style.left = '0px';
+        if (this._root.length > 1) {
+            this._element.style.width = 'auto';
+            this._element.style.maxWidth = '60%';
+        } else {
+            this._element.style.removeProperty('width');
+            this._element.style.maxWidth = 'auto';
+        }
     }
 
     _update() {
-        const label = (item, mnemonic) => {
-            delete item.mnemonic;
-            const value = item.label;
-            if (value) {
-                const index = value.indexOf('&');
-                if (index !== -1) {
-                    if (mnemonic) {
-                        item.mnemonic = value[index + 1].toUpperCase();
-                        return value.substring(0, index) + '<u>' + value[index + 1] + '</u>' + value.substring(index + 2);
-                    }
-                    return value.substring(0, index) + value.substring(index + 1);
-                }
-            }
-            return value || '';
-        };
-        const active = this._stack.length > 0 ? this._stack[this._stack.length - 1] : null;
-        for (const group of this.items) {
+        this._buttons = [];
+        const selected = this._stack.length > 0 ? this._stack[this._stack.length - 1] : null;
+        const root = this._root[this._root.length - 1];
+        for (const group of root.items) {
             let visible = false;
             let block = false;
-            const container = this._host.document.getElementById(group.identifier);
-            container.childNodes[0].innerHTML = label(group, this === active);
+            const active = this._stack.length <= 1 || this._stack[1] === group;
+            const container = this._document.getElementById(group.identifier);
+            container.childNodes[0].innerHTML = this._label(group, this === selected);
             for (const item of group.items) {
                 switch (item.type) {
+                    case 'group':
                     case 'command': {
-                        const button = this._host.document.getElementById(item.identifier);
-                        button.innerHTML = label(item, group === active);
+                        const label = this._label(item, group === selected);
+                        const button = this._document.getElementById(item.identifier);
+                        button.childNodes[1].innerHTML = label;
                         if (item.enabled) {
                             button.removeAttribute('disabled');
                             button.style.display = 'block';
                             visible = true;
                             block = true;
-                        }
-                        else {
+                            if (active) {
+                                this._buttons.push(button);
+                            }
+                        } else {
                             button.setAttribute('disabled', '');
                             button.style.display = 'none';
-                        }
-                        if (item.accelerator) {
-                            const accelerator = this._host.document.createElement('span');
-                            accelerator.setAttribute('class', 'shortcut');
-                            accelerator.innerHTML = item.accelerator;
-                            button.appendChild(accelerator);
                         }
                         break;
                     }
                     case 'separator': {
-                        const element = this._host.document.createElement('span');
+                        const element = this._document.getElementById(item.identifier);
                         element.style.display = block ? 'block' : 'none';
                         block = false;
                         break;
@@ -1219,59 +1479,25 @@ view.Menu = class {
                     }
                 }
             }
+            for (let i = group.items.length - 1; i >= 0; i--) {
+                const item = group.items[i];
+                if ((item.type === 'group' || item.type === 'command') && item.enabled) {
+                    break;
+                } else if (item.type === 'separator') {
+                    const element = this._document.getElementById(item.identifier);
+                    element.style.display = 'none';
+                }
+            }
             if (!visible) {
                 container.style.display = 'none';
             }
-            container.style.opacity = this._stack.length > 1 && this._stack[1] !== group ? 0 : 1;
+            container.style.opacity = active ? 1 : 0;
         }
-    }
-
-    _close() {
-        this._stack = [];
-        this._element.style.opacity = 0;
-        this._element.style.left = '-200px';
-    }
-
-    register(item) {
-        let shortcut = '';
-        if (item.accelerator) {
-            let cmdOrCtrl = false;
-            let alt = false;
-            let shift = false;
-            let key = '';
-            for (const part of item.accelerator.split('+')) {
-                switch (part) {
-                    case 'CmdOrCtrl': cmdOrCtrl = true; break;
-                    case 'Alt': alt = true; break;
-                    case 'Shift': shift = true; break;
-                    default: key = part; break;
-                }
-            }
-            if (key !== '') {
-                if (this._darwin) {
-                    shortcut += alt ? '&#x2325;' : '';
-                    shortcut += shift ? '&#x21e7;' : '';
-                    shortcut += cmdOrCtrl ? '&#x2318;' : '';
-                    shortcut += this._symbols.has(key) ? this._symbols.get(key) : key;
-                }
-                else {
-                    shortcut += cmdOrCtrl ? 'Ctrl+' : '';
-                    shortcut += alt ? 'Alt+' : '';
-                    shortcut += shift ? 'Shift+' : '';
-                    shortcut += key;
-                }
-                let code = this._codes.has(key) ? this._codes.get(key) : key.charCodeAt(0);
-                code |= cmdOrCtrl ? 0x0400 : 0;
-                code |= alt ? 0x0200 : 0;
-                code |= shift ? 0x0100 : 0;
-                this._accelerators.set(code.toString(), item);
-            }
+        const button = this._element.ownerDocument.activeElement;
+        const index = this._buttons.indexOf(button);
+        if (index === -1 && this._buttons.length > 0) {
+            this._buttons[0].focus();
         }
-        item.accelerator = shortcut;
-    }
-
-    unregister(item) {
-        this._accelerators = new Map(Array.from(this._accelerators.entries()).filter((entry) => entry.value !== item));
     }
 };
 
@@ -1292,14 +1518,14 @@ view.Menu.Group = class {
         const item = Object.keys(value).length > 0 ? new view.Menu.Command(value) : new view.Menu.Separator();
         item.identifier = this.identifier + '-' + this.items.length.toString();
         this.items.push(item);
-        this.parent.register(item);
+        item.shortcut = this.parent.register(item, item.accelerator);
     }
 
     group(label) {
         const item = new view.Menu.Group(this, label);
         item.identifier = this.identifier + '-' + this.items.length.toString();
         this.items.push(item);
-        this.parent.register(item);
+        item.shortcut = this.parent.register(item, item.accelerator);
         return item;
     }
 
@@ -1313,8 +1539,8 @@ view.Menu.Group = class {
         this.items = [];
     }
 
-    register(item) {
-        this.parent.register(item);
+    register(item, accelerator) {
+        return this.parent.register(item, accelerator);
     }
 
     unregister(item) {
@@ -1485,8 +1711,7 @@ view.Graph = class extends grapher.Graph {
                             if (!clusterParentMap.has(groupName)) {
                                 groupName = null;
                             }
-                        }
-                        else {
+                        } else {
                             groupName = null;
                         }
                     }
@@ -1608,13 +1833,11 @@ view.Node = class extends grapher.Node {
                                 }
                                 separator = ' = ';
                             }
-                        }
-                        catch (err) {
+                        } catch (err) {
                             let type = '?';
                             try {
                                 type = argument.initializer.type.toString();
-                            }
-                            catch (error) {
+                            } catch (error) {
                                 // continue regardless of error
                             }
                             const error = new view.Error("Failed to render tensor of type '" + type + "' (" + err.message + ").");
@@ -1847,8 +2070,7 @@ view.Sidebar = class {
         }
         if (this._stack.length > 0) {
             this._activate(this._stack[this._stack.length - 1]);
-        }
-        else {
+        } else {
             this._hide();
         }
     }
@@ -1878,23 +2100,19 @@ view.Sidebar = class {
     _activate(item) {
         const sidebar = this._element('sidebar');
         if (sidebar) {
-
             const title = this._element('sidebar-title');
             title.innerHTML = item.title ? item.title.toUpperCase() : '';
             const closeButton = this._element('sidebar-closebutton');
             closeButton.addEventListener('click', this._closeSidebarHandler);
             const content = this._element('sidebar-content');
-
             if (typeof item.content == 'string') {
                 content.innerHTML = item.content;
-            }
-            else if (item.content instanceof Array) {
+            } else if (item.content instanceof Array) {
                 content.innerHTML = '';
                 for (const element of item.content) {
                     content.appendChild(element);
                 }
-            }
-            else {
+            } else {
                 content.innerHTML = '';
                 content.appendChild(item.content);
             }
@@ -1937,6 +2155,10 @@ view.NodeSidebar = class extends view.Control {
         this._attributes = [];
         this._inputs = [];
         this._outputs = [];
+
+        const container = this._host.document.createElement('div');
+        container.className = 'sidebar-node';
+        this._elements.push(container);
 
         if (node.type) {
             let showDocumentation = null;
@@ -1999,10 +2221,6 @@ view.NodeSidebar = class extends view.Control {
                 this._addOutput(output.name, output);
             }
         }
-
-        const separator = this._host.document.createElement('div');
-        separator.className = 'sidebar-view-separator';
-        this._elements.push(separator);
     }
 
     render() {
@@ -2010,15 +2228,15 @@ view.NodeSidebar = class extends view.Control {
     }
 
     _addHeader(title) {
-        const headerElement = this._host.document.createElement('div');
-        headerElement.className = 'sidebar-view-header';
-        headerElement.innerText = title;
-        this._elements.push(headerElement);
+        const element = this._host.document.createElement('div');
+        element.className = 'sidebar-header';
+        element.innerText = title;
+        this._elements[0].appendChild(element);
     }
 
     _addProperty(name, value) {
         const item = new view.NameValueView(this._host, name, value);
-        this._elements.push(item.render());
+        this._elements[0].appendChild(item.render());
     }
 
     _addAttribute(name, attribute) {
@@ -2028,29 +2246,30 @@ view.NodeSidebar = class extends view.Control {
         });
         const item = new view.NameValueView(this._host, name, value);
         this._attributes.push(item);
-        this._elements.push(item.render());
+        this._elements[0].appendChild(item.render());
     }
 
     _addInput(name, input) {
         if (input.arguments.length > 0) {
             const value = new view.ParameterView(this._host, input);
-            value.on('export-tensor', (sender, tensor) => {
-                this.emit('export-tensor', tensor);
-            });
-            value.on('error', (sender, tensor) => {
-                this.emit('error', tensor);
-            });
+            value.on('export-tensor', (sender, value) => this.emit('export-tensor', value));
+            value.on('error', (sender, value) => this.emit('error', value));
+            value.on('activate', (sender, value) => this.emit('activate', value));
+            value.on('deactivate', (sender, value) => this.emit('deactivate', value));
             const item = new view.NameValueView(this._host, name, value);
             this._inputs.push(item);
-            this._elements.push(item.render());
+            this._elements[0].appendChild(item.render());
         }
     }
 
     _addOutput(name, output) {
         if (output.arguments.length > 0) {
-            const item = new view.NameValueView(this._host, name, new view.ParameterView(this._host, output));
+            const value = new view.ParameterView(this._host, output);
+            value.on('activate', (sender, value) => this.emit('activate', value));
+            value.on('deactivate', (sender, value) => this.emit('deactivate', value));
+            const item = new view.NameValueView(this._host, name, value);
             this._outputs.push(item);
-            this._elements.push(item.render());
+            this._elements[0].appendChild(item.render());
         }
     }
 
@@ -2071,7 +2290,7 @@ view.NameValueView = class {
         this._value = value;
 
         const nameElement = this._host.document.createElement('div');
-        nameElement.className = 'sidebar-view-item-name';
+        nameElement.className = 'sidebar-item-name';
 
         const nameInputElement = this._host.document.createElement('input');
         nameInputElement.setAttribute('type', 'text');
@@ -2081,14 +2300,14 @@ view.NameValueView = class {
         nameElement.appendChild(nameInputElement);
 
         const valueElement = this._host.document.createElement('div');
-        valueElement.className = 'sidebar-view-item-value-list';
+        valueElement.className = 'sidebar-item-value-list';
 
         for (const element of value.render()) {
             valueElement.appendChild(element);
         }
 
         this._element = this._host.document.createElement('div');
-        this._element.className = 'sidebar-view-item';
+        this._element.className = 'sidebar-item';
         this._element.appendChild(nameElement);
         this._element.appendChild(valueElement);
     }
@@ -2115,7 +2334,7 @@ view.SelectView = class extends view.Control {
         this._values = values;
 
         const selectElement = this._host.document.createElement('select');
-        selectElement.setAttribute('class', 'sidebar-view-item-select');
+        selectElement.setAttribute('class', 'sidebar-item-select');
         selectElement.addEventListener('change', (e) => {
             this.emit('change', this._values[e.target.selectedIndex]);
         });
@@ -2142,12 +2361,12 @@ view.ValueTextView = class {
         this._host = host;
         this._elements = [];
         const element = this._host.document.createElement('div');
-        element.className = 'sidebar-view-item-value';
+        element.className = 'sidebar-item-value';
         this._elements.push(element);
 
         if (action) {
             this._action = this._host.document.createElement('div');
-            this._action.className = 'sidebar-view-item-value-expander';
+            this._action.className = 'sidebar-item-value-expander';
             this._action.innerHTML = action.text;
             this._action.addEventListener('click', () => {
                 action.callback();
@@ -2156,13 +2375,13 @@ view.ValueTextView = class {
         }
 
         const list = Array.isArray(value) ? value : [ value ];
-        let className = 'sidebar-view-item-value-line';
+        let className = 'sidebar-item-value-line';
         for (const item of list) {
             const line = this._host.document.createElement('div');
             line.className = className;
             line.innerText = item;
             element.appendChild(line);
-            className = 'sidebar-view-item-value-line-border';
+            className = 'sidebar-item-value-line-border';
         }
     }
 
@@ -2189,7 +2408,7 @@ view.ValueView = class extends view.Control {
     }
 
     _add(child) {
-        child.className = this._element.childNodes.length < 2 ? 'sidebar-view-item-value-line' : 'sidebar-view-item-value-line-border';
+        child.className = this._element.childNodes.length < 2 ? 'sidebar-item-value-line' : 'sidebar-item-value-line-border';
         this._element.appendChild(child);
     }
 
@@ -2216,24 +2435,20 @@ view.ValueView = class extends view.Control {
             }
             if (tensor.layout !== '<' && tensor.layout !== '>' && tensor.layout !== '|' && tensor.layout !== 'sparse' && tensor.layout !== 'sparse.coo') {
                 contentLine.innerHTML = "Tensor layout '" + tensor.layout + "' is not implemented.";
-            }
-            else if (tensor.empty) {
+            } else if (tensor.empty) {
                 contentLine.innerHTML = 'Tensor data is empty.';
-            }
-            else if (tensor.type && tensor.type.dataType === '?') {
+            } else if (tensor.type && tensor.type.dataType === '?') {
                 contentLine.innerHTML = 'Tensor data type is not defined.';
-            }
-            else if (tensor.type && !tensor.type.shape) {
+            } else if (tensor.type && !tensor.type.shape) {
                 contentLine.innerHTML = 'Tensor shape is not defined.';
-            }
-            else {
+            } else {
                 contentLine.innerHTML = tensor.toString();
 
                 if (this._host.save &&
                     value.type.shape && value.type.shape.dimensions &&
                     value.type.shape.dimensions.length > 0) {
                     this._saveButton = this._host.document.createElement('div');
-                    this._saveButton.className = 'sidebar-view-item-value-expander';
+                    this._saveButton.className = 'sidebar-item-value-expander';
                     this._saveButton.innerHTML = '&#x1F4BE;';
                     this._saveButton.addEventListener('click', () => {
                         this.emit('export-tensor', tensor);
@@ -2241,13 +2456,12 @@ view.ValueView = class extends view.Control {
                     this._element.appendChild(this._saveButton);
                 }
             }
-        }
-        catch (err) {
+        } catch (err) {
             contentLine.innerHTML = err.toString();
             this.emit('error', err);
         }
         const valueLine = this._host.document.createElement('div');
-        valueLine.className = 'sidebar-view-item-value-line-border';
+        valueLine.className = 'sidebar-item-value-line-border';
         valueLine.appendChild(contentLine);
         this._element.appendChild(valueLine);
     }
@@ -2260,12 +2474,12 @@ view.AttributeView = class extends view.ValueView {
         this._host = host;
         this._attribute = attribute;
         this._element = this._host.document.createElement('div');
-        this._element.className = 'sidebar-view-item-value';
+        this._element.className = 'sidebar-item-value';
 
         const type = this._attribute.type;
         if (type) {
             this._expander = this._host.document.createElement('div');
-            this._expander.className = 'sidebar-view-item-value-expander';
+            this._expander.className = 'sidebar-item-value-expander';
             this._expander.innerText = '+';
             this._expander.addEventListener('click', () => {
                 this.toggle();
@@ -2276,7 +2490,7 @@ view.AttributeView = class extends view.ValueView {
         switch (type) {
             case 'graph': {
                 const line = this._host.document.createElement('div');
-                line.className = 'sidebar-view-item-value-line-link';
+                line.className = 'sidebar-item-value-line-link';
                 line.innerHTML = value.name;
                 line.addEventListener('click', () => {
                     this.emit('show-graph', value);
@@ -2286,7 +2500,7 @@ view.AttributeView = class extends view.ValueView {
             }
             case 'function': {
                 const line = this._host.document.createElement('div');
-                line.className = 'sidebar-view-item-value-line-link';
+                line.className = 'sidebar-item-value-line-link';
                 line.innerHTML = value.type.name;
                 line.addEventListener('click', () => {
                     this.emit('show-graph', value.type);
@@ -2303,7 +2517,7 @@ view.AttributeView = class extends view.ValueView {
                     content = content.split('<').join('&lt;').split('>').join('&gt;');
                 }
                 const line = this._host.document.createElement('div');
-                line.className = 'sidebar-view-item-value-line';
+                line.className = 'sidebar-item-value-line';
                 line.innerHTML = content ? content : '&nbsp;';
                 this._element.appendChild(line);
             }
@@ -2322,14 +2536,14 @@ view.AttributeView = class extends view.ValueView {
             const value = this._attribute.value;
             const content = type == 'tensor' && value && value.type ? value.type.toString() : this._attribute.type;
             const typeLine = this._host.document.createElement('div');
-            typeLine.className = 'sidebar-view-item-value-line-border';
+            typeLine.className = 'sidebar-item-value-line-border';
             typeLine.innerHTML = 'type: ' + '<code><b>' + content + '</b></code>';
             this._element.appendChild(typeLine);
 
             const description = this._attribute.description;
             if (description) {
                 const descriptionLine = this._host.document.createElement('div');
-                descriptionLine.className = 'sidebar-view-item-value-line-border';
+                descriptionLine.className = 'sidebar-item-value-line-border';
                 descriptionLine.innerHTML = description;
                 this._element.appendChild(descriptionLine);
             }
@@ -2337,8 +2551,7 @@ view.AttributeView = class extends view.ValueView {
             if (this._attribute.type == 'tensor' && value) {
                 this._tensor(value);
             }
-        }
-        else {
+        } else {
             this._expander.innerText = '+';
             while (this._element.childElementCount > 2) {
                 this._element.removeChild(this._element.lastChild);
@@ -2356,12 +2569,10 @@ view.ParameterView = class extends view.Control {
         this._items = [];
         for (const argument of list.arguments) {
             const item = new view.ArgumentView(host, argument);
-            item.on('export-tensor', (sender, tensor) => {
-                this.emit('export-tensor', tensor);
-            });
-            item.on('error', (sender, tensor) => {
-                this.emit('error', tensor);
-            });
+            item.on('export-tensor', (sender, value) => this.emit('export-tensor', value));
+            item.on('error', (sender, value) => this.emit('error', value));
+            item.on('activate', (sender, value) => this.emit('activate', value));
+            item.on('deactivate', (sender, value) => this.emit('deactivate', value));
             this._items.push(item);
             this._elements.push(item.render());
         }
@@ -2386,7 +2597,7 @@ view.ArgumentView = class extends view.ValueView {
         this._argument = argument;
 
         this._element = this._host.document.createElement('div');
-        this._element.className = 'sidebar-view-item-value';
+        this._element.className = 'sidebar-item-value';
 
         const type = this._argument.type;
         const initializer = this._argument.initializer;
@@ -2394,12 +2605,12 @@ view.ArgumentView = class extends view.ValueView {
         const location = this._argument.location !== undefined;
 
         if (initializer) {
-            this._element.classList.add('sidebar-view-item-value-dark');
+            this._element.classList.add('sidebar-item-value-dark');
         }
 
         if (type || initializer || quantization || location) {
             this._expander = this._host.document.createElement('div');
-            this._expander.className = 'sidebar-view-item-value-expander';
+            this._expander.className = 'sidebar-item-value-expander';
             this._expander.innerText = '+';
             this._expander.addEventListener('click', () => {
                 this.toggle();
@@ -2413,17 +2624,17 @@ view.ArgumentView = class extends view.ValueView {
         if (this._hasId || (!this._hasCategory && !type)) {
             this._hasId = true;
             const nameLine = this._host.document.createElement('div');
-            nameLine.className = 'sidebar-view-item-value-line';
+            nameLine.className = 'sidebar-item-value-line';
             if (typeof name !== 'string') {
                 throw new Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
             }
-            nameLine.innerHTML = '<span class=\'sidebar-view-item-value-line-content\'>name: <b>' + (name || ' ') + '</b></span>';
+            nameLine.innerHTML = '<span class=\'sidebar-item-value-line-content\'>name: <b>' + (name || ' ') + '</b></span>';
+            nameLine.addEventListener('pointerenter', () => this.emit('activate', this._argument));
+            nameLine.addEventListener('pointerleave', () => this.emit('deactivate', this._argument));
             this._element.appendChild(nameLine);
-        }
-        else if (this._hasCategory) {
+        } else if (this._hasCategory) {
             this._bold('category', initializer.category);
-        }
-        else if (type) {
+        } else if (type) {
             this._code('type', type.toString().split('<').join('&lt;').split('>').join('&gt;'));
         }
     }
@@ -2458,7 +2669,7 @@ view.ArgumentView = class extends view.ValueView {
                 const description = this._argument.description;
                 if (description) {
                     const descriptionLine = this._host.document.createElement('div');
-                    descriptionLine.className = 'sidebar-view-item-value-line-border';
+                    descriptionLine.className = 'sidebar-item-value-line-border';
                     descriptionLine.innerHTML = description;
                     this._element.appendChild(descriptionLine);
                 }
@@ -2466,9 +2677,9 @@ view.ArgumentView = class extends view.ValueView {
                 const quantization = this._argument.quantization;
                 if (quantization) {
                     const quantizationLine = this._host.document.createElement('div');
-                    quantizationLine.className = 'sidebar-view-item-value-line-border';
+                    quantizationLine.className = 'sidebar-item-value-line-border';
                     const content = !Array.isArray(quantization) ? quantization : '<br><br>' + quantization.map((value) => '  ' + value).join('<br>');
-                    quantizationLine.innerHTML = '<span class=\'sidebar-view-item-value-line-content\'>quantization: ' + '<b>' + content + '</b></span>';
+                    quantizationLine.innerHTML = '<span class=\'sidebar-item-value-line-content\'>quantization: ' + '<b>' + content + '</b></span>';
                     this._element.appendChild(quantizationLine);
                 }
 
@@ -2480,8 +2691,7 @@ view.ArgumentView = class extends view.ValueView {
                 if (initializer) {
                     this._tensor(initializer);
                 }
-            }
-            else {
+            } else {
                 this._expander.innerText = '+';
                 while (this._element.childElementCount > 2) {
                     this._element.removeChild(this._element.lastChild);
@@ -2497,7 +2707,9 @@ view.ModelSidebar = class extends view.Control {
         super();
         this._host = host;
         this._model = model;
-        this._elements = [];
+
+        this._container = this._host.document.createElement('div');
+        this._container.className = 'sidebar-node';
 
         if (model.format) {
             this._addProperty('format', new view.ValueTextView(this._host, model.format));
@@ -2563,33 +2775,29 @@ view.ModelSidebar = class extends view.Control {
                 }
             }
         }
-
-        const separator = this._host.document.createElement('div');
-        separator.className = 'sidebar-view-separator';
-        this._elements.push(separator);
     }
 
     render() {
-        return this._elements;
+        return [ this._container ];
     }
 
     _addHeader(title) {
-        const headerElement = this._host.document.createElement('div');
-        headerElement.className = 'sidebar-view-header';
-        headerElement.innerText = title;
-        this._elements.push(headerElement);
+        const element = this._host.document.createElement('div');
+        element.className = 'sidebar-header';
+        element.innerText = title;
+        this._container.appendChild(element);
     }
 
     _addProperty(name, value) {
         const item = new view.NameValueView(this._host, name, value);
-        this._elements.push(item.render());
+        this._container.appendChild(item.render());
     }
 
     addArgument(name, argument) {
         const value = new view.ParameterView(this._host, argument);
         value.toggle();
         const item = new view.NameValueView(this._host, name, value);
-        this._elements.push(item.render());
+        this._container.appendChild(item.render());
     }
 };
 
@@ -2608,7 +2816,7 @@ view.DocumentationSidebar = class extends view.Control {
             const type = view.Documentation.format(this._type);
 
             const element = this._host.document.createElement('div');
-            element.setAttribute('class', 'sidebar-view-documentation');
+            element.setAttribute('class', 'sidebar-documentation');
 
             this._append(element, 'h1', type.name);
 
@@ -2691,10 +2899,6 @@ view.DocumentationSidebar = class extends view.Control {
             }
 
             this._elements = [ element ];
-
-            const separator = this._host.document.createElement('div');
-            separator.className = 'sidebar-view-separator';
-            this._elements.push(separator);
         }
         return this._elements;
     }
@@ -2711,29 +2915,26 @@ view.DocumentationSidebar = class extends view.Control {
 
 view.FindSidebar = class extends view.Control {
 
-    constructor(host, element, graph) {
+    constructor(host, graph) {
         super();
         this._host = host;
-        this._graphElement = element;
         this._graph = graph;
-        this._contentElement = this._host.document.createElement('div');
-        this._contentElement.setAttribute('class', 'sidebar-view-find');
+
         this._searchElement = this._host.document.createElement('input');
+        this._searchElement.setAttribute('class', 'sidebar-find-search');
         this._searchElement.setAttribute('id', 'search');
         this._searchElement.setAttribute('type', 'text');
         this._searchElement.setAttribute('spellcheck', 'false');
-        this._searchElement.setAttribute('placeholder', 'Search...');
-        this._searchElement.setAttribute('style', 'width: 100%');
+        this._searchElement.setAttribute('placeholder', 'Search');
         this._searchElement.addEventListener('input', (e) => {
             this.update(e.target.value);
             this.emit('search-text-changed', e.target.value);
         });
-        this._resultElement = this._host.document.createElement('ol');
-        this._resultElement.addEventListener('click', (e) => {
-            this.select(e);
+        this._contentElement = this._host.document.createElement('ol');
+        this._contentElement.setAttribute('class', 'sidebar-find-content');
+        this._contentElement.addEventListener('click', (e) => {
+            this.emit('select', e.target.id);
         });
-        this._contentElement.appendChild(this._searchElement);
-        this._contentElement.appendChild(this._resultElement);
     }
 
     on(event, callback) {
@@ -2750,44 +2951,6 @@ view.FindSidebar = class extends view.Control {
         }
     }
 
-    select(e) {
-        const selection = [];
-        const id = e.target.id;
-
-        const nodesElement = this._graphElement.getElementById('nodes');
-        let nodeElement = nodesElement.firstChild;
-        while (nodeElement) {
-            if (nodeElement.id == id) {
-                selection.push(nodeElement);
-            }
-            nodeElement = nodeElement.nextSibling;
-        }
-
-        const edgePathsElement = this._graphElement.getElementById('edge-paths');
-        let edgePathElement = edgePathsElement.firstChild;
-        while (edgePathElement) {
-            if (edgePathElement.id == id) {
-                selection.push(edgePathElement);
-            }
-            edgePathElement = edgePathElement.nextSibling;
-        }
-
-        let initializerElement = this._graphElement.getElementById(id);
-        if (initializerElement) {
-            while (initializerElement.parentElement) {
-                initializerElement = initializerElement.parentElement;
-                if (initializerElement.id && initializerElement.id.startsWith('node-')) {
-                    selection.push(initializerElement);
-                    break;
-                }
-            }
-        }
-
-        if (selection.length > 0) {
-            this.emit('select', selection);
-        }
-    }
-
     focus(searchText) {
         this._searchElement.focus();
         this._searchElement.value = '';
@@ -2796,8 +2959,8 @@ view.FindSidebar = class extends view.Control {
     }
 
     update(searchText) {
-        while (this._resultElement.lastChild) {
-            this._resultElement.removeChild(this._resultElement.lastChild);
+        while (this._contentElement.lastChild) {
+            this._contentElement.removeChild(this._contentElement.lastChild);
         }
 
         let terms = null;
@@ -2809,8 +2972,7 @@ view.FindSidebar = class extends view.Control {
             callback = (name) => {
                 return term == name;
             };
-        }
-        else {
+        } else {
             terms = searchText.trim().toLowerCase().split(' ').map((term) => term.trim()).filter((term) => term.length > 0);
             callback = (name) => {
                 return terms.every((term) => name.toLowerCase().indexOf(term) !== -1);
@@ -2857,10 +3019,9 @@ view.FindSidebar = class extends view.Control {
                                     const inputItem = this._host.document.createElement('li');
                                     inputItem.innerText = '\u2192 ' + argument.name.split('\n').shift(); // custom argument id
                                     inputItem.id = 'edge-' + argument.name;
-                                    this._resultElement.appendChild(inputItem);
+                                    this._contentElement.appendChild(inputItem);
                                     edges.add(argument.name);
-                                }
-                                else {
+                                } else {
                                     initializers.push(argument);
                                 }
                             }
@@ -2876,7 +3037,7 @@ view.FindSidebar = class extends view.Control {
                     const nameItem = this._host.document.createElement('li');
                     nameItem.innerText = '\u25A2 ' + (name || '[' + type + ']');
                     nameItem.id = label.id;
-                    this._resultElement.appendChild(nameItem);
+                    this._contentElement.appendChild(nameItem);
                     nodes.add(label.id);
                 }
             }
@@ -2885,7 +3046,7 @@ view.FindSidebar = class extends view.Control {
                     const initializeItem = this._host.document.createElement('li');
                     initializeItem.innerText = '\u25A0 ' + argument.name.split('\n').shift(); // custom argument id
                     initializeItem.id = 'initializer-' + argument.name;
-                    this._resultElement.appendChild(initializeItem);
+                    this._contentElement.appendChild(initializeItem);
                 }
             }
         }
@@ -2899,7 +3060,7 @@ view.FindSidebar = class extends view.Control {
                             const outputItem = this._host.document.createElement('li');
                             outputItem.innerText = '\u2192 ' + argument.name.split('\n').shift(); // custom argument id
                             outputItem.id = 'edge-' + argument.name;
-                            this._resultElement.appendChild(outputItem);
+                            this._contentElement.appendChild(outputItem);
                             edges.add(argument.name);
                         }
                     }
@@ -2907,11 +3068,11 @@ view.FindSidebar = class extends view.Control {
             }
         }
 
-        this._resultElement.style.display = this._resultElement.childNodes.length != 0 ? 'block' : 'none';
+        this._contentElement.style.display = this._contentElement.childNodes.length != 0 ? 'block' : 'none';
     }
 
-    get content() {
-        return this._contentElement;
+    render() {
+        return [ this._searchElement, this._contentElement ];
     }
 };
 
@@ -3056,18 +3217,15 @@ view.Tensor = class {
                     if (context.data.length < (context.itemsize * size)) {
                         throw new Error('Invalid tensor data size.');
                     }
-                }
-                else if (dataType.startsWith('uint') && !isNaN(parseInt(dataType.substring(4), 10))) {
+                } else if (dataType.startsWith('uint') && !isNaN(parseInt(dataType.substring(4), 10))) {
                     context.dataType = 'uint';
                     context.bits = parseInt(dataType.substring(4), 10);
                     context.itemsize = 1;
-                }
-                else if (dataType.startsWith('int') && !isNaN(parseInt(dataType.substring(3), 10))) {
+                } else if (dataType.startsWith('int') && !isNaN(parseInt(dataType.substring(3), 10))) {
                     context.dataType = 'int';
                     context.bits = parseInt(dataType.substring(3), 10);
                     context.itemsize = 1;
-                }
-                else {
+                } else {
                     throw new Error("Tensor data type '" + dataType + "' is not implemented.");
                 }
                 break;
@@ -3137,8 +3295,7 @@ view.Tensor = class {
                     const index = indices[i];
                     array[index.high === 0 ? index.low : index.toNumber()] = values[i];
                 }
-            }
-            else {
+            } else {
                 for (let i = 0; i < indices.length; i++) {
                     array[indices[i]] = values[i];
                 }
@@ -3259,8 +3416,7 @@ view.Tensor = class {
             if (ellipsis) {
                 results.push('...');
             }
-        }
-        else {
+        } else {
             for (let j = 0; j < size; j++) {
                 if (context.count >= context.limit) {
                     results.push('...');
@@ -3297,8 +3453,7 @@ view.Tensor = class {
                 context.index++;
                 context.count++;
             }
-        }
-        else {
+        } else {
             for (let j = 0; j < size; j++) {
                 if (context.count > context.limit) {
                     results.push('...');
@@ -3643,8 +3798,7 @@ view.Formatter = class {
         const entries = Object.entries(value).filter((entry) => !entry[0].startsWith('__') && !entry[0].endsWith('__'));
         if (entries.length == 1) {
             list = [ this._format(entries[0][1], null, true) ];
-        }
-        else {
+        } else {
             list = new Array(entries.length);
             for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
@@ -3709,7 +3863,7 @@ markdown.Generator = class {
         this._emStartRegExp = /^(?:(\*(?=[!"#$%&'()+\-.,/:;<=>?@[\]`{|}~]))|\*)(?![*\s])|_/;
         this._emMiddleRegExp = /^\*(?:(?:(?!__[^_]*?__|\*\*\[^\*\]*?\*\*)(?:[^*]|\\\*)|__[^_]*?__|\*\*\[^\*\]*?\*\*)|\*(?:(?!__[^_]*?__|\*\*\[^\*\]*?\*\*)(?:[^*]|\\\*)|__[^_]*?__|\*\*\[^\*\]*?\*\*)*?\*)+?\*$|^_(?![_\s])(?:(?:(?!__[^_]*?__|\*\*\[^\*\]*?\*\*)(?:[^_]|\\_)|__[^_]*?__|\*\*\[^\*\]*?\*\*)|_(?:(?!__[^_]*?__|\*\*\[^\*\]*?\*\*)(?:[^_]|\\_)|__[^_]*?__|\*\*\[^\*\]*?\*\*)*?_)+?_$/;
         this._emEndAstRegExp = /[^!"#$%&'()+\-.,/:;<=>?@[\]`{|}~\s]\*(?!\*)|[!"#$%&'()+\-.,/:;<=>?@[\]`{|}~]\*(?!\*)(?:(?=[!"#$%&'()+\-.,/:;<=>?@[\]`{|}~_\s]|$))/g;
-        this._emEndUndRegExp = /[^\s]_(?!_)(?:(?=[!"#$%&'()+\-.,/:;<=>?@[\]`{|}~*\s])|$)/g,
+        this._emEndUndRegExp = /[^\s]_(?!_)(?:(?=[!"#$%&'()+\-.,/:;<=>?@[\]`{|}~*\s])|$)/g;
         this._codespanRegExp = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
         this._brRegExp = /^( {2,}|\\)\n(?!\s*$)/;
         this._delRegExp = /^~+(?=\S)([\s\S]*?\S)~+/;
@@ -3750,8 +3904,7 @@ markdown.Generator = class {
                 const lastToken = tokens[tokens.length - 1];
                 if (lastToken && lastToken.type === 'paragraph') {
                     lastToken.text += '\n' + match[0].trimRight();
-                }
-                else {
+                } else {
                     const text = match[0].replace(/^ {4}/gm, '').replace(/\n*$/, '');
                     tokens.push({ type: 'code', text: text });
                 }
@@ -3789,14 +3942,11 @@ markdown.Generator = class {
                     for (let i = 0; i < token.align.length; i++) {
                         if (/^ *-+: *$/.test(token.align[i])) {
                             token.align[i] = 'right';
-                        }
-                        else if (/^ *:-+: *$/.test(token.align[i])) {
+                        } else if (/^ *:-+: *$/.test(token.align[i])) {
                             token.align[i] = 'center';
-                        }
-                        else if (/^ *:-+ *$/.test(token.align[i])) {
+                        } else if (/^ *:-+ *$/.test(token.align[i])) {
                             token.align[i] = 'left';
-                        }
-                        else {
+                        } else {
                             token.align[i] = null;
                         }
                     }
@@ -3899,14 +4049,11 @@ markdown.Generator = class {
                     for (let i = 0; i < token.align.length; i++) {
                         if (/^ *-+: *$/.test(token.align[i])) {
                             token.align[i] = 'right';
-                        }
-                        else if (/^ *:-+: *$/.test(token.align[i])) {
+                        } else if (/^ *:-+: *$/.test(token.align[i])) {
                             token.align[i] = 'center';
-                        }
-                        else if (/^ *:-+ *$/.test(token.align[i])) {
+                        } else if (/^ *:-+ *$/.test(token.align[i])) {
                             token.align[i] = 'left';
-                        }
-                        else {
+                        } else {
                             token.align[i] = null;
                         }
                     }
@@ -3936,8 +4083,7 @@ markdown.Generator = class {
                 const lastToken = tokens[tokens.length - 1];
                 if (lastToken && lastToken.type === 'text') {
                     lastToken.text += '\n' + match[0];
-                }
-                else {
+                } else {
                     tokens.push({ type: 'text', text: match[0] });
                 }
                 continue;
@@ -3982,14 +4128,12 @@ markdown.Generator = class {
                 source = source.substring(match[0].length);
                 if (!inLink && /^<a /i.test(match[0])) {
                     inLink = true;
-                }
-                else if (inLink && /^<\/a>/i.test(match[0])) {
+                } else if (inLink && /^<\/a>/i.test(match[0])) {
                     inLink = false;
                 }
                 if (!inRawBlock && /^<(pre|code|kbd|script)(\s|>)/i.test(match[0])) {
                     inRawBlock = true;
-                }
-                else if (inRawBlock && /^<\/(pre|code|kbd|script)(\s|>)/i.test(match[0])) {
+                } else if (inRawBlock && /^<\/(pre|code|kbd|script)(\s|>)/i.test(match[0])) {
                     inRawBlock = false;
                 }
                 tokens.push({ type: 'html', raw: match[0], text: match[0] });
@@ -4045,8 +4189,7 @@ markdown.Generator = class {
                     const text = match[0].charAt(0);
                     source = source.substring(text.length);
                     tokens.push({ type: 'text', text: text });
-                }
-                else {
+                } else {
                     source = source.substring(match[0].length);
                     const token = this._outputLink(match, link);
                     if (token.type === 'link') {
@@ -4252,12 +4395,10 @@ markdown.Generator = class {
                                     if (item.tokens[0].tokens && item.tokens[0].tokens.length > 0 && item.tokens[0].tokens[0].type === 'text') {
                                         item.tokens[0].tokens[0].text = checkbox + ' ' + item.tokens[0].tokens[0].text;
                                     }
-                                }
-                                else {
+                                } else {
                                     item.tokens.unshift({ type: 'text', text: checkbox });
                                 }
-                            }
-                            else {
+                            } else {
                                 itemBody += checkbox;
                             }
                         }
@@ -4364,8 +4505,7 @@ markdown.Generator = class {
         const cells = row.split(/ \|/);
         if (cells.length > count) {
             cells.splice(count);
-        }
-        else {
+        } else {
             while (cells.length < count) {
                 cells.push('');
             }
@@ -4399,8 +4539,7 @@ view.ModelContext = class {
         if (!stream && entries && entries.size > 0) {
             this._entries = entries;
             this._format = '';
-        }
-        else {
+        } else {
             this._entries = new Map();
             const entry = context instanceof view.EntryContext;
             try {
@@ -4412,8 +4551,7 @@ view.ModelContext = class {
                         stream = this._entries.values().next().value;
                     }
                 }
-            }
-            catch (error) {
+            } catch (error) {
                 if (!entry) {
                     throw error;
                 }
@@ -4430,8 +4568,7 @@ view.ModelContext = class {
                         break;
                     }
                 }
-            }
-            catch (error) {
+            } catch (error) {
                 if (!entry) {
                     throw error;
                 }
@@ -4491,8 +4628,7 @@ view.ModelContext = class {
                                     const obj = reader.read();
                                     this._content.set(type, obj);
                                 }
-                            }
-                            catch (err) {
+                            } catch (err) {
                                 // continue regardless of error
                             }
                             break;
@@ -4508,8 +4644,7 @@ view.ModelContext = class {
                                         this._content.set(type, obj);
                                     }
                                 }
-                            }
-                            catch (err) {
+                            } catch (err) {
                                 // continue regardless of error
                             }
                             break;
@@ -4542,8 +4677,7 @@ view.ModelContext = class {
                                     const pickle = execution.__import__('pickle');
                                     unpickler = new pickle.Unpickler(data);
                                 }
-                            }
-                            catch (err) {
+                            } catch (err) {
                                 // continue regardless of error
                             }
                             if (unpickler) {
@@ -4634,8 +4768,7 @@ view.ModelContext = class {
                                 throw new view.Error("Unsupported tags format type '" + type + "'.");
                             }
                         }
-                    }
-                    catch (error) {
+                    } catch (error) {
                         tags.clear();
                     }
                 }
@@ -4678,19 +4811,19 @@ view.EntryContext = class {
         return this._stream;
     }
 
-    request(file, encoding, base) {
+    async request(file, encoding, base) {
         if (base === undefined) {
             const stream = this._entries.get(file);
             if (!stream) {
-                return Promise.reject(new Error('File not found.'));
+                throw new view.Error('File not found.');
             }
             if (encoding) {
                 const decoder = new TextDecoder(encoding);
                 const buffer = stream.peek();
                 const value = decoder.decode(buffer);
-                return Promise.resolve(value);
+                return value;
             }
-            return Promise.resolve(stream);
+            return stream;
         }
         return this._host.request(file, encoding, base);
     }
@@ -4732,7 +4865,7 @@ view.ModelFactoryService = class {
         this.register('./mediapipe', [ '.pbtxt' ]);
         this.register('./uff', [ '.uff', '.pb', '.pbtxt', '.uff.txt', '.trt', '.engine' ]);
         this.register('./tensorrt', [ '.trt', '.trtmodel', '.engine', '.model', '.txt', '.uff', '.pb', '.tmfile', '.onnx', '.pth', '.dnn', '.plan' ]);
-        this.register('./numpy', [ '.npz', '.npy', '.pkl', '.pickle', '.model', '.model2' ]);
+        this.register('./numpy', [ '.npz', '.npy', '.pkl', '.pickle', '.model', '.model2', '.mge' ]);
         this.register('./lasagne', [ '.pkl', '.pickle', '.joblib', '.model', '.pkl.z', '.joblib.z' ]);
         this.register('./lightgbm', [ '.txt', '.pkl', '.model' ]);
         this.register('./keras', [ '.h5', '.hd5', '.hdf5', '.keras', '.json', '.cfg', '.model', '.pb', '.pth', '.weights', '.pkl', '.lite', '.tflite', '.ckpt' ], [ '.zip' ]);
@@ -4759,7 +4892,7 @@ view.ModelFactoryService = class {
         this.register('./flux', [ '.bson' ]);
         this.register('./dl4j', [ '.json', '.bin' ]);
         this.register('./openvino', [ '.xml', '.bin' ]);
-        this.register('./mlnet', [ '.zip' ]);
+        this.register('./mlnet', [ '.zip', '.mlnet' ]);
         this.register('./acuity', [ '.json' ]);
         this.register('./imgdnn', [ '.dnn', 'params', '.json' ]);
         this.register('./flax', [ '.msgpack' ]);
@@ -4770,6 +4903,7 @@ view.ModelFactoryService = class {
         this.register('./cambricon', [ '.cambricon' ]);
         this.register('./onednn', [ '.json']);
         this.register('./mlir', [ '.mlir']);
+        this.register('./hailo', ['.hn', '.har']);
     }
 
     register(id, factories, containers) {
@@ -4782,32 +4916,29 @@ view.ModelFactoryService = class {
         }
     }
 
-    open(context) {
-        return this._openSignature(context).then((context) => {
+    async open(context) {
+        try {
+            await this._openSignature(context);
             const modelContext = new view.ModelContext(context);
-            /* eslint-disable consistent-return */
-            return this._openContext(modelContext).then((model) => {
-                if (model) {
-                    return model;
-                }
+            const model = await this._openContext(modelContext);
+            if (!model) {
                 const entries = modelContext.entries();
-                if (entries && entries.size > 0) {
-                    return this._openEntries(entries).then((context) => {
-                        if (context) {
-                            return this._openContext(context);
-                        }
-                        this._unsupported(modelContext);
-                    });
+                if (!entries || entries.size === 0) {
+                    this._unsupported(modelContext);
                 }
-                this._unsupported(modelContext);
-            });
-            /* eslint-enable consistent-return */
-        }).catch((error) => {
+                const context = await this._openEntries(entries);
+                if (!context) {
+                    this._unsupported(modelContext);
+                }
+                return this._openContext(context);
+            }
+            return model;
+        } catch (error) {
             if (error && context.identifier) {
                 error.context = context.identifier;
             }
             throw error;
-        });
+        }
     }
 
     _unsupported(context) {
@@ -4823,8 +4954,7 @@ view.ModelFactoryService = class {
             let archive = null;
             try {
                 archive = callback(stream);
-            }
-            catch (error) {
+            } catch (error) {
                 // continue regardless of error
             }
             if (archive) {
@@ -4930,8 +5060,7 @@ view.ModelFactoryService = class {
                             if (typeof value !== 'object' || !match(value, inner)) {
                                 return false;
                             }
-                        }
-                        else if (inner !== value) {
+                        } else if (inner !== value) {
                             if (inner === 2 && !Array.isArray(value) && Object(value) === (value) && Object.keys(value).length === 0) {
                                 return true;
                             }
@@ -5011,65 +5140,48 @@ view.ModelFactoryService = class {
         unknown();
     }
 
-    _openContext(context) {
+    async _openContext(context) {
         const modules = this._filter(context).filter((module) => module && module.length > 0);
         const errors = [];
         let success = false;
-        const nextModule = () => {
+        const next = async () => {
             if (modules.length > 0) {
-                const id = modules.shift();
-                return this._host.require(id).then((module) => {
+                try {
+                    const id = modules.shift();
+                    const module = await this._host.require(id);
                     if (!module.ModelFactory) {
                         throw new view.Error("Failed to load module '" + id + "'.");
                     }
                     const modelFactory = new module.ModelFactory();
-                    let match = undefined;
-                    try {
-                        match = modelFactory.match(context);
-                        if (!match) {
-                            return nextModule();
+                    const match = modelFactory.match(context);
+                    if (match) {
+                        success = true;
+                        const model = await modelFactory.open(context, match);
+                        if (!model.identifier) {
+                            model.identifier = context.identifier;
                         }
+                        return model;
                     }
-                    catch (error) {
-                        return Promise.reject(error);
+                } catch (error) {
+                    if (context.stream && context.stream.position !== 0) {
+                        context.stream.seek(0);
                     }
-                    success = true;
-                    try {
-                        return modelFactory.open(context, match).then((model) => {
-                            if (!model.identifier) {
-                                model.identifier = context.identifier;
-                            }
-                            return model;
-                        }).catch((error) => {
-                            if (context.stream && context.stream.position !== 0) {
-                                context.stream.seek(0);
-                            }
-                            errors.push(error);
-                            return nextModule();
-                        });
-                    }
-                    catch (error) {
-                        if (context.stream && context.stream.position !== 0) {
-                            context.stream.seek(0);
-                        }
-                        errors.push(error);
-                        return nextModule();
-                    }
-                });
+                    errors.push(error);
+                }
+                return await next();
             }
             if (success) {
                 if (errors.length === 1) {
-                    const error = errors[0];
-                    return Promise.reject(error);
+                    throw errors[0];
                 }
-                return Promise.reject(new view.Error(errors.map((err) => err.message).join('\n')));
+                throw new view.Error(errors.map((err) => err.message).join('\n'));
             }
-            return Promise.resolve(null);
+            return null;
         };
-        return nextModule();
+        return await next();
     }
 
-    _openEntries(entries) {
+    async _openEntries(entries) {
         try {
             const rootFolder = (files) => {
                 const map = files.map((file) => file.split('/').slice(0, -1));
@@ -5079,34 +5191,33 @@ view.ModelFactoryService = class {
                 const folder = rotate(map).filter(equals).map(at(0)).join('/');
                 return folder.length === 0 ? folder : folder + '/';
             };
-            const filter = (queue) => {
+            const filter = async (queue) => {
                 let matches = [];
-                const nextEntry = () => {
+                const nextEntry = async () => {
                     if (queue.length > 0) {
                         const entry = queue.shift();
                         const context = new view.ModelContext(new view.EntryContext(this._host, entries, folder, entry.name, entry.stream));
-                        let modules = this._filter(context);
-                        const nextModule = () => {
+                        const modules = this._filter(context);
+                        const nextModule = async () => {
                             if (modules.length > 0) {
                                 const id = modules.shift();
-                                return this._host.require(id).then((module) => {
-                                    if (!module.ModelFactory) {
-                                        throw new view.ArchiveError("Failed to load module '" + id + "'.", null);
-                                    }
-                                    const factory = new module.ModelFactory();
-                                    if (factory.match(context)) {
-                                        matches.push(context);
-                                        modules = [];
-                                    }
-                                    return nextModule();
-                                });
+                                const module = await this._host.require(id);
+                                if (!module.ModelFactory) {
+                                    throw new view.ArchiveError("Failed to load module '" + id + "'.", null);
+                                }
+                                const modelFactory = new module.ModelFactory();
+                                if (modelFactory.match(context)) {
+                                    matches.push(context);
+                                    modules.splice(0, modules.length);
+                                }
+                                return await nextModule();
                             }
-                            return nextEntry();
+                            return await nextEntry();
                         };
-                        return nextModule();
+                        return await nextModule();
                     }
                     if (matches.length === 0) {
-                        return Promise.resolve(null);
+                        return null;
                     }
                     // MXNet
                     if (matches.length === 2 &&
@@ -5163,12 +5274,12 @@ view.ModelFactoryService = class {
                         matches = matches.filter((context) => context.identifier.toLowerCase().split('/').pop() !== 'keras_metadata.pb');
                     }
                     if (matches.length > 1) {
-                        return Promise.reject(new view.ArchiveError('Archive contains multiple model files.'));
+                        throw new view.ArchiveError('Archive contains multiple model files.');
                     }
                     const match = matches.shift();
-                    return Promise.resolve(match);
+                    return match;
                 };
-                return nextEntry();
+                return await nextEntry();
             };
             const list = Array.from(entries).map((entry) => {
                 return { name: entry[0], stream: entry[1] };
@@ -5187,16 +5298,14 @@ view.ModelFactoryService = class {
             });
             const folder = rootFolder(files.map((entry) => entry.name));
             const queue = files.slice(0).filter((entry) => entry.name.substring(folder.length).indexOf('/') < 0);
-            return filter(queue).then((context) => {
-                if (context) {
-                    return Promise.resolve(context);
-                }
+            const context = await filter(queue);
+            if (!context) {
                 const queue = files.slice(0).filter((entry) => entry.name.substring(folder.length).indexOf('/') >= 0);
-                return filter(queue);
-            });
-        }
-        catch (error) {
-            return Promise.reject(new view.ArchiveError(error.message));
+                return await filter(queue);
+            }
+            return context;
+        } catch (error) {
+            throw new view.ArchiveError(error.message);
         }
     }
 
@@ -5226,7 +5335,7 @@ view.ModelFactoryService = class {
         return Array.from(new Set(list.map((entry) => entry.id)));
     }
 
-    _openSignature(context) {
+    async _openSignature(context) {
         const stream = context.stream;
         if (stream) {
             let empty = true;
@@ -5241,7 +5350,7 @@ view.ModelFactoryService = class {
             }
             stream.seek(0);
             if (empty) {
-                return Promise.reject(new view.Error('File has no content.'));
+                throw new view.Error('File has no content.');
             }
             /* eslint-disable no-control-regex */
             const entries = [
@@ -5272,30 +5381,30 @@ view.ModelFactoryService = class {
             const content = String.fromCharCode.apply(null, buffer);
             for (const entry of entries) {
                 if (content.match(entry.value) && (!entry.identifier || entry.identifier === context.identifier)) {
-                    return Promise.reject(new view.Error('Invalid file content. File contains ' + entry.name + '.'));
+                    throw new view.Error('Invalid file content. File contains ' + entry.name + '.');
                 }
             }
         }
-        return Promise.resolve(context);
     }
 };
 
 view.Metadata = class {
 
-    static open(context, name) {
+    static async open(context, name) {
         view.Metadata._metadata = view.Metadata._metadata || new Map();
         if (view.Metadata._metadata.has(name)) {
-            return Promise.resolve(view.Metadata._metadata.get(name));
+            return view.Metadata._metadata.get(name);
         }
-        return context.request(name, 'utf-8', null).then((data) => {
+        try {
+            const data = await context.request(name, 'utf-8', null);
             const library = new view.Metadata(data);
             view.Metadata._metadata.set(name, library);
             return library;
-        }).catch(() => {
+        } catch (error) {
             const library = new view.Metadata(null);
             view.Metadata._metadata.set(name, library);
             return library;
-        });
+        }
     }
 
     constructor(data) {

@@ -31,55 +31,50 @@ tflite.ModelFactory = class {
         return undefined;
     }
 
-    open(context, match) {
-        return context.require('./tflite-schema').then(() => {
-            tflite.schema = flatbuffers.get('tflite').tflite;
-            let model = null;
-            const attachments = new Map();
-            switch (match) {
-                case 'tflite.flatbuffers.json': {
-                    try {
-                        const obj = context.open('json');
-                        const reader = new flatbuffers.TextReader(obj);
-                        model = tflite.schema.Model.createText(reader);
-                    }
-                    catch (error) {
-                        const message = error && error.message ? error.message : error.toString();
-                        throw new tflite.Error('File text format is not tflite.Model (' + message.replace(/\.$/, '') + ').');
-                    }
-                    break;
+    async open(context, match) {
+        await context.require('./tflite-schema');
+        tflite.schema = flatbuffers.get('tflite').tflite;
+        let model = null;
+        const attachments = new Map();
+        switch (match) {
+            case 'tflite.flatbuffers.json': {
+                try {
+                    const obj = context.open('json');
+                    const reader = new flatbuffers.TextReader(obj);
+                    model = tflite.schema.Model.createText(reader);
+                } catch (error) {
+                    const message = error && error.message ? error.message : error.toString();
+                    throw new tflite.Error('File text format is not tflite.Model (' + message.replace(/\.$/, '') + ').');
                 }
-                case 'tflite.flatbuffers': {
-                    const stream = context.stream;
-                    try {
-                        const reader = flatbuffers.BinaryReader.open(stream);
-                        model = tflite.schema.Model.create(reader);
-                    }
-                    catch (error) {
-                        const message = error && error.message ? error.message : error.toString();
-                        throw new tflite.Error('File format is not tflite.Model (' + message.replace(/\.$/, '') + ').');
-                    }
-                    try {
-                        const archive = zip.Archive.open(stream);
-                        if (archive) {
-                            for (const entry of archive.entries) {
-                                attachments.set(entry[0], entry[1]);
-                            }
+                break;
+            }
+            case 'tflite.flatbuffers': {
+                const stream = context.stream;
+                try {
+                    const reader = flatbuffers.BinaryReader.open(stream);
+                    model = tflite.schema.Model.create(reader);
+                } catch (error) {
+                    const message = error && error.message ? error.message : error.toString();
+                    throw new tflite.Error('File format is not tflite.Model (' + message.replace(/\.$/, '') + ').');
+                }
+                try {
+                    const archive = zip.Archive.open(stream);
+                    if (archive) {
+                        for (const entry of archive.entries) {
+                            attachments.set(entry[0], entry[1]);
                         }
                     }
-                    catch (error) {
-                        // continue regardless of error
-                    }
-                    break;
+                } catch (error) {
+                    // continue regardless of error
                 }
-                default: {
-                    throw new tflite.Error("Unsupported TensorFlow Lite format '" + match + "'.");
-                }
+                break;
             }
-            return context.metadata('tflite-metadata.json').then((metadata) => {
-                return new tflite.Model(metadata, model);
-            });
-        });
+            default: {
+                throw new tflite.Error("Unsupported TensorFlow Lite format '" + match + "'.");
+            }
+        }
+        const metadata = await context.metadata('tflite-metadata.json');
+        return new tflite.Model(metadata, model);
     }
 };
 
@@ -204,8 +199,7 @@ tflite.Graph = class {
                     const data = buffer ? buffer.data : null;
                     const initializer = (data && data.length > 0) || is_variable ? new tflite.Tensor(index, tensor, buffer, is_variable) : null;
                     tensors.set(index, new tflite.Argument(index, tensor, initializer));
-                }
-                else {
+                } else {
                     tensors.set(index, new tflite.Argument(index, { name: '' }, null));
                 }
             }
@@ -229,8 +223,7 @@ tflite.Graph = class {
                     const contentProperties = content.content_properties;
                     if (contentProperties instanceof tflite.schema.FeatureProperties) {
                         denotation = 'Feature';
-                    }
-                    else if (contentProperties instanceof tflite.schema.ImageProperties) {
+                    } else if (contentProperties instanceof tflite.schema.ImageProperties) {
                         denotation = 'Image';
                         switch (contentProperties.color_space) {
                             case 0: denotation += '(Unknown)'; break;
@@ -238,11 +231,9 @@ tflite.Graph = class {
                             case 2: denotation += '(Grayscale)'; break;
                             default: throw tflite.Error("Unsupported image color space '" + contentProperties.color_space + "'.");
                         }
-                    }
-                    else if (contentProperties instanceof tflite.schema.BoundingBoxProperties) {
+                    } else if (contentProperties instanceof tflite.schema.BoundingBoxProperties) {
                         denotation = 'BoundingBox';
-                    }
-                    else if (contentProperties instanceof tflite.schema.AudioProperties) {
+                    } else if (contentProperties instanceof tflite.schema.AudioProperties) {
                         denotation = 'Audio(' + contentProperties.sample_rate.toString() + ',' + contentProperties.channels.toString() + ')';
                     }
                     if (denotation) {
@@ -355,8 +346,7 @@ tflite.Node = class {
                                 const attribute = new tflite.Attribute(null, 'custom_options', custom_options);
                                 this._attributes.push(attribute);
                                 decoded = true;
-                            }
-                            else if (custom_options) {
+                            } else if (custom_options) {
                                 for (const pair of Object.entries(custom_options)) {
                                     const key = pair[0];
                                     const value = pair[1];
@@ -367,8 +357,7 @@ tflite.Node = class {
                                 decoded = true;
                             }
                         }
-                    }
-                    catch (err) {
+                    } catch (err) {
                         // continue regardless of error
                     }
                 }
@@ -441,8 +430,7 @@ tflite.Attribute = class {
         if (metadata) {
             if (Object.prototype.hasOwnProperty.call(metadata, 'visible') && !metadata.visible) {
                 this._visible = false;
-            }
-            else if (Object.prototype.hasOwnProperty.call(metadata, 'default')) {
+            } else if (Object.prototype.hasOwnProperty.call(metadata, 'default')) {
                 value = this._value;
                 if (typeof value == 'function') {
                     value = value();

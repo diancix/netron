@@ -17,11 +17,10 @@ barracuda.ModelFactory = class {
         return null;
     }
 
-    open(context) {
-        return barracuda.Metadata.open().then((metadata) => {
-            const nn = new barracuda.NNModel(context.stream.peek());
-            return new barracuda.Model(metadata, nn);
-        });
+    async open(context) {
+        const metadata = barracuda.Metadata.open();
+        const nn = new barracuda.NNModel(context.stream.peek());
+        return new barracuda.Model(metadata, nn);
     }
 };
 
@@ -62,8 +61,7 @@ barracuda.Graph = class {
         for (const layer of nn.layers) {
             if (layer.type !== 255 || layer.inputs.length > 0) {
                 layers.push(layer);
-            }
-            else {
+            } else {
                 for (const tensor of layer.tensors) {
                     initializers.set(tensor.name, new barracuda.Tensor(tensor));
                 }
@@ -148,8 +146,7 @@ barracuda.Node = class {
                 const initializer = initializers.has(input) ? initializers.get(input) : null;
                 return new barracuda.Argument(input, initializer ? initializer.type : null, initializer);
             })));
-        }
-        else if (layer.inputs) {
+        } else if (layer.inputs) {
             for (let i = 0; i < layer.inputs.length; i++) {
                 const input = layer.inputs[i];
                 const initializer = initializers.has(input) ? initializers.get(input) : null;
@@ -441,7 +438,7 @@ barracuda.Metadata = class {
 
     static open() {
         barracuda.Metadata._metadata = barracuda.Metadata._metadata || new barracuda.Metadata();
-        return Promise.resolve(barracuda.Metadata._metadata);
+        return barracuda.Metadata._metadata;
     }
 
     constructor() {

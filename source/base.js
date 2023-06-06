@@ -40,7 +40,7 @@ base.Int64 = class Int64 {
     }
 
     not() {
-        return new Int64(~this.low, ~this.high);
+        return new base.Int64(~this.low, ~this.high);
     }
 
     equals(other) {
@@ -105,10 +105,10 @@ base.Int64 = class Int64 {
         }
         if (this.high < 0) {
             if (this.equals(base.Int64.min)) {
-                const r = new Int64(radix, 0);
-                const div = this.divide(r);
-                const remainder = div.multiply(r).subtract(this);
-                return div.toString(r) + (remainder.low >>> 0).toString(r);
+                const radix = new base.Int64(r, 0);
+                const div = this.divide(radix);
+                const remainder = div.multiply(radix).subtract(this);
+                return div.toString(radix) + (remainder.low >>> 0).toString(radix);
             }
             return '-' + this.negate().toString(r);
         }
@@ -122,6 +122,7 @@ base.Int64 = class Int64 {
 base.Int64.min = new base.Int64(0, -2147483648);
 base.Int64.zero = new base.Int64(0, 0);
 base.Int64.one = new base.Int64(1, 0);
+base.Int64.negativeOne = new base.Int64(-1, 0);
 base.Int64.power24 = new base.Int64(1 << 24, 0);
 base.Int64.max = new base.Int64(0, 2147483647);
 
@@ -276,12 +277,11 @@ base.Utility = class {
         }
         if (a.isNegative) {
             if (b.isNegative) {
-                return this.negate().multiply(b.negate());
+                return a.negate().multiply(b.negate());
             }
-            return this.negate().multiply(b).negate();
-        }
-        else if (b.isNegative) {
-            return this.multiply(b.negate()).negate();
+            return a.negate().multiply(b).negate();
+        } else if (b.isNegative) {
+            return a.multiply(b.negate()).negate();
         }
         if (a.compare(base.Int64.power24) < 0 && b.compare(base.Int64.power24) < 0) {
             return unsigned ? base.Uint64.create(a.toNumber() * b.toNumber()) : base.Int64.create(a.toNumber() * b.toNumber());
@@ -335,21 +335,19 @@ base.Utility = class {
             if (a.equals(base.Int64.min)) {
                 if (b.equals(base.Int64.one) || b.equals(base.Int64.negativeOne)) {
                     return base.Int64.min;
-                }
-                else if (b.equals(base.Int64.min)) {
+                } else if (b.equals(base.Int64.min)) {
                     return base.Int64.one;
                 }
                 const half = base.Utility._shiftRight(a, unsigned, 1);
                 const halfDivide = half.divide(b);
                 approx = base.Utility._shiftLeft(halfDivide, halfDivide instanceof base.Uint64, 1);
-                if (approx.eq(base.Int64.zero)) {
+                if (approx.equals(base.Int64.zero)) {
                     return b.isNegative ? base.Int64.one : base.Int64.negativeOne;
                 }
                 remainder = a.subtract(b.multiply(approx));
                 result = approx.add(remainder.divide(b));
                 return result;
-            }
-            else if (b.equals(base.Int64.min)) {
+            } else if (b.equals(base.Int64.min)) {
                 return base.Int64.zero;
             }
             if (a.isNegative) {
@@ -357,13 +355,11 @@ base.Utility = class {
                     return this.negate().divide(b.negate());
                 }
                 return a.negate().divide(b).negate();
-            }
-            else if (b.isNegative) {
+            } else if (b.isNegative) {
                 return a.divide(b.negate()).negate();
             }
             result = base.Int64.zero;
-        }
-        else {
+        } else {
             if (!(b instanceof base.Uint64)) {
                 b = new base.Uint64(b.low, b.high);
             }
@@ -471,11 +467,9 @@ if (!DataView.prototype.getFloat16) {
         let f = value & 0x03FF;
         if (e == 0) {
             f = 0.00006103515625 * (f / 1024);
-        }
-        else if (e == 0x1F) {
+        } else if (e == 0x1F) {
             f = f ? NaN : Infinity;
-        }
-        else {
+        } else {
             f = DataView.__float16_pow[e] * (1 + (f / 1024));
         }
         return value & 0x8000 ? -f : f;
@@ -507,20 +501,16 @@ if (!DataView.prototype.setFloat16) {
         if (e < -27) {
             DataView.__float16_base[i] = 0x0000;
             DataView.__float16_shift[i] = 24;
-        }
-        else if (e < -14) {
+        } else if (e < -14) {
             DataView.__float16_base[i] = 0x0400 >> -e - 14;
             DataView.__float16_shift[i] = -e - 1;
-        }
-        else if (e <= 15) {
+        } else if (e <= 15) {
             DataView.__float16_base[i] = e + 15 << 10;
             DataView.__float16_shift[i] = 13;
-        }
-        else if (e < 128) {
+        } else if (e < 128) {
             DataView.__float16_base[i] = 0x7c00;
             DataView.__float16_shift[i] = 24;
-        }
-        else {
+        } else {
             DataView.__float16_base[i] = 0x7c00;
             DataView.__float16_shift[i] = 13;
         }
@@ -552,8 +542,7 @@ DataView.prototype.setInt64 = DataView.prototype.setInt64 || function(byteOffset
     if (littleEndian) {
         this.setUint32(byteOffset, value.low, true);
         this.setUint32(byteOffset + 4, value.high, true);
-    }
-    else {
+    } else {
         this.setUint32(byteOffset + 4, value.low, false);
         this.setUint32(byteOffset, value.high, false);
     }
@@ -588,8 +577,7 @@ DataView.prototype.setUint64 = DataView.prototype.setUint64 || function(byteOffs
     if (littleEndian) {
         this.setUint32(byteOffset, value.low, true);
         this.setUint32(byteOffset + 4, value.high, true);
-    }
-    else {
+    } else {
         this.setUint32(byteOffset + 4, value.low, false);
         this.setUint32(byteOffset, value.high, false);
     }
@@ -624,8 +612,7 @@ DataView.prototype.setComplex64 = DataView.prototype.setComplex64 || function(by
     if (littleEndian) {
         this.setFloat32(byteOffset, value.real, littleEndian);
         this.setFloat32(byteOffset + 4, value.imaginary, littleEndian);
-    }
-    else {
+    } else {
         this.setFloat32(byteOffset + 4, value.real, littleEndian);
         this.setFloat32(byteOffset, value.imaginary, littleEndian);
     }
@@ -641,10 +628,72 @@ DataView.prototype.setComplex128 = DataView.prototype.setComplex128 || function(
     if (littleEndian) {
         this.setFloat64(byteOffset, value.real, littleEndian);
         this.setFloat64(byteOffset + 8, value.imaginary, littleEndian);
-    }
-    else {
+    } else {
         this.setFloat64(byteOffset + 8, value.real, littleEndian);
         this.setFloat64(byteOffset, value.imaginary, littleEndian);
+    }
+};
+
+base.BinaryStream = class {
+
+    constructor(buffer) {
+        this._buffer = buffer;
+        this._length = buffer.length;
+        this._position = 0;
+    }
+
+    get position() {
+        return this._position;
+    }
+
+    get length() {
+        return this._length;
+    }
+
+    stream(length) {
+        const buffer = this.read(length);
+        return new base.BinaryStream(buffer.slice(0));
+    }
+
+    seek(position) {
+        this._position = position >= 0 ? position : this._length + position;
+        if (this._position > this._buffer.length) {
+            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
+        }
+    }
+
+    skip(offset) {
+        this._position += offset;
+        if (this._position > this._buffer.length) {
+            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
+        }
+    }
+
+    peek(length) {
+        if (this._position === 0 && length === undefined) {
+            return this._buffer;
+        }
+        const position = this._position;
+        this.skip(length !== undefined ? length : this._length - this._position);
+        const end = this._position;
+        this.seek(position);
+        return this._buffer.subarray(position, end);
+    }
+
+    read(length) {
+        if (this._position === 0 && length === undefined) {
+            this._position = this._length;
+            return this._buffer;
+        }
+        const position = this._position;
+        this.skip(length !== undefined ? length : this._length - this._position);
+        return this._buffer.subarray(position, this._position);
+    }
+
+    byte() {
+        const position = this._position;
+        this.skip(1);
+        return this._buffer[position];
     }
 };
 
@@ -791,7 +840,11 @@ base.BinaryReader = class {
 
 base.Telemetry = class {
 
-    constructor(window, measurement_id, client_id, session) {
+    constructor(window) {
+        this._window = window;
+        this._navigator = window.navigator;
+        this._config = new Map();
+        this._metadata = {};
         this._schema = new Map([
             [ 'protocol_version', 'v' ],
             [ 'tracking_id', 'tid' ],
@@ -822,15 +875,17 @@ base.Telemetry = class {
             [ 'is_session_start', '_ss' ],
             [ 'event_name', 'en' ]
         ]);
-        this._config = new Map();
-        this._metadata = {};
+    }
+
+    async start(measurement_id, client_id, session) {
         this._session = session && typeof session === 'string' ? session.replace(/^GS1\.1\./, '').split('.') : null;
         this._session = Array.isArray(this._session) && this._session.length >= 7 ? this._session : [ '0', '0', '0', '0', '0', '0', '0' ];
         this._session[0] = Date.now();
         this._session[1] = parseInt(this._session[1], 10) + 1;
         this._engagement_time_msec = 0;
-        this._navigator = window.navigator;
-        const navigator = this._navigator;
+        if (this._config.size > 0) {
+            throw new Error('Invalid session state.');
+        }
         this.set('protocol_version', 2);
         this.set('tracking_id', measurement_id);
         this.set('hash_info', '2oebu0');
@@ -838,8 +893,7 @@ base.Telemetry = class {
         client_id = client_id ? client_id.replace(/^(GA1\.\d\.)*/, '') : null;
         if (client_id && client_id.indexOf('.') !== 1) {
             this.set('client_id', client_id);
-        }
-        else {
+        } else {
             const random = String(Math.round(0x7FFFFFFF * Math.random()));
             const time = Date.now();
             const value = [ random, Math.round(time / 1e3) ].join('.');
@@ -847,13 +901,10 @@ base.Telemetry = class {
             this._metadata.is_first_visit = 1;
             this._metadata.is_new_to_site = 1;
         }
-        this.set('language', ((navigator && (navigator.language || navigator.browserLanguage)) || '').toLowerCase());
+        this.set('language', ((this._navigator && (this._navigator.language || this._navigator.browserLanguage)) || '').toLowerCase());
         this.set('screen_resolution', (window.screen ? window.screen.width : 0) + 'x' + (window.screen ? window.screen.height : 0));
-    }
-
-    start() {
-        const promise = navigator && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues ? navigator.userAgentData.getHighEntropyValues([ 'platform', 'platformVersion', 'architecture', 'model', 'uaFullVersion', 'bitness', 'fullVersionList', 'wow64' ]) : Promise.resolve();
-        return promise.then((values) => {
+        if (this._navigator && this._navigator.userAgentData && this._navigator.userAgentData.getHighEntropyValues) {
+            const values = await this._navigator.userAgentData.getHighEntropyValues([ 'platform', 'platformVersion', 'architecture', 'model', 'uaFullVersion', 'bitness', 'fullVersionList', 'wow64' ]);
             if (values) {
                 this.set('_user_agent_architecture', values.architecture);
                 this.set('_user_agent_bitness', values.bitness);
@@ -864,31 +915,30 @@ base.Telemetry = class {
                 this.set('_user_agent_platform_version', values.platformVersion);
                 this.set('_user_agent_wow64', values.wow64 ? 1 : 0);
             }
-            this.set('hit_count', 1);
-            this.set('session_id', this._session[0]);
-            this.set('session_number', this._session[1]);
-            this.set('session_engaged', 0);
-            this._metadata.is_session_start = 1;
-            this._metadata.is_external_event = 1;
-            window.addEventListener('focus', () => this._update(true, undefined, undefined));
-            window.addEventListener('blur', () => this._update(false, undefined, undefined));
-            window.addEventListener('pageshow', () => this._update(undefined, true, undefined));
-            window.addEventListener('pagehide', () => this._update(undefined, false, undefined));
-            window.addEventListener('visibilitychange', () => this._update(undefined, undefined, window.document.visibilityState !== 'hidden'));
-            window.addEventListener('beforeunload', () => this._update() && this.send('user_engagement', {}));
-        });
+        }
+        this.set('hit_count', 1);
+        this.set('session_id', this._session[0]);
+        this.set('session_number', this._session[1]);
+        this.set('session_engaged', 0);
+        this._metadata.is_session_start = 1;
+        this._metadata.is_external_event = 1;
+        window.addEventListener('focus', () => this._update(true, undefined, undefined));
+        window.addEventListener('blur', () => this._update(false, undefined, undefined));
+        window.addEventListener('pageshow', () => this._update(undefined, true, undefined));
+        window.addEventListener('pagehide', () => this._update(undefined, false, undefined));
+        window.addEventListener('visibilitychange', () => this._update(undefined, undefined, window.document.visibilityState !== 'hidden'));
+        window.addEventListener('beforeunload', () => this._update() && this.send('user_engagement', {}));
     }
 
     get session() {
-        return this._session.join('.');
+        return this._session ? this._session.join('.') : null;
     }
 
     set(name, value) {
         const key = this._schema.get(name);
         if (value !== undefined && value !== null) {
             this._config.set(key, value);
-        }
-        else if (this._config.has(key)) {
+        } else if (this._config.has(key)) {
             this._config.delete(key);
         }
         this._cache = null;
@@ -900,17 +950,23 @@ base.Telemetry = class {
     }
 
     send(name, params) {
-        params = Object.assign({ event_name: name }, this._metadata, /* { debug_mode: true },*/ params);
-        this._metadata = {};
-        this._update() && (params.engagement_time_msec = this._engagement_time_msec) && (this._engagement_time_msec = 0);
-        const build = (entires) => entires.map((entry) => entry[0] + '=' + encodeURIComponent(entry[1])).join('&');
-        this._cache = this._cache || build(Array.from(this._config));
-        const key = (name, value) => this._schema.get(name) || ('number' === typeof value && !isNaN(value) ? 'epn.' : 'ep.') + name;
-        const body = build(Object.entries(params).map((entry) => [ key(entry[0], entry[1]), entry[1] ]));
-        const url = 'https://analytics.google.com/g/collect?' + this._cache;
-        this._navigator.sendBeacon(url, body);
-        this._session[2] = this.get('session_engaged') || '0';
-        this.set('hit_count', this.get('hit_count') + 1);
+        if (this._session) {
+            try {
+                params = Object.assign({ event_name: name }, this._metadata, /* { debug_mode: true },*/ params);
+                this._metadata = {};
+                this._update() && (params.engagement_time_msec = this._engagement_time_msec) && (this._engagement_time_msec = 0);
+                const build = (entires) => entires.map((entry) => entry[0] + '=' + encodeURIComponent(entry[1])).join('&');
+                this._cache = this._cache || build(Array.from(this._config));
+                const key = (name, value) => this._schema.get(name) || ('number' === typeof value && !isNaN(value) ? 'epn.' : 'ep.') + name;
+                const body = build(Object.entries(params).map((entry) => [ key(entry[0], entry[1]), entry[1] ]));
+                const url = 'https://analytics.google.com/g/collect?' + this._cache;
+                this._navigator.sendBeacon(url, body);
+                this._session[2] = this.get('session_engaged') || '0';
+                this.set('hit_count', this.get('hit_count') + 1);
+            } catch (e) {
+                // continue regardless of error
+            }
+        }
     }
 
     _update(focused, page, visible) {
@@ -939,7 +995,7 @@ base.Metadata = class {
             'dnn', 'cmf',
             'hd5', 'hdf5', 'keras',
             'tfl', 'circle', 'lite',
-            'mar',  'meta', 'nn', 'ngf',
+            'mlnet', 'mar',  'meta', 'nn', 'ngf', 'hn', 'har',
             'param', 'params',
             'paddle', 'pdiparams', 'pdmodel', 'pdopt', 'pdparams', 'nb',
             'pkl', 'joblib',
@@ -962,6 +1018,7 @@ if (typeof module !== 'undefined' && typeof module.exports === 'object') {
     module.exports.Uint64 = base.Uint64;
     module.exports.Complex64 = base.Complex64;
     module.exports.Complex128 = base.Complex128;
+    module.exports.BinaryStream = base.BinaryStream;
     module.exports.BinaryReader = base.BinaryReader;
     module.exports.Telemetry = base.Telemetry;
     module.exports.Metadata = base.Metadata;

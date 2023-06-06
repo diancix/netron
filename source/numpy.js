@@ -32,7 +32,7 @@ numpy.ModelFactory = class {
         return undefined;
     }
 
-    open(context, match) {
+    async open(context, match) {
         let format = '';
         const graphs = [];
         switch (match.name) {
@@ -151,8 +151,7 @@ numpy.ModelFactory = class {
                 throw new numpy.Error("Unsupported NumPy format '" + match.name + "'.");
             }
         }
-        const model = new numpy.Model(format, graphs);
-        return Promise.resolve(model);
+        return new numpy.Model(format, graphs);
     }
 };
 
@@ -357,21 +356,18 @@ numpy.Utility = class {
                         if (numpy.Utility.isTensor(obj)) {
                             weights.set(key, obj);
                             continue;
-                        }
-                        else if (obj instanceof Map && Array.from(obj).every((pair) => numpy.Utility.isTensor(pair[1]))) {
+                        } else if (obj instanceof Map && Array.from(obj).every((pair) => numpy.Utility.isTensor(pair[1]))) {
                             for (const pair of obj) {
                                 weights.set(key + '.' + pair[0], pair[1]);
                             }
                             continue;
-                        }
-                        else if (key === '_metadata') {
+                        } else if (key === '_metadata') {
                             continue;
                         }
                         return null;
                     }
                     return weights;
-                }
-                else if (!Array.isArray(dict)) {
+                } else if (!Array.isArray(dict)) {
                     const set = new Set([ 'weight_order', 'lr', 'model_iter', '__class__' ]);
                     for (const entry of Object.entries(dict)) {
                         const key = entry[0];
@@ -414,8 +410,7 @@ numpy.Utility = class {
                     if (numpy.Utility.isTensor(obj)) {
                         weights.set(i.toString(), obj);
                         continue;
-                    }
-                    else if (obj instanceof Map && Array.from(obj).every((pair) => numpy.Utility.isTensor(pair[1]))) {
+                    } else if (obj instanceof Map && Array.from(obj).every((pair) => numpy.Utility.isTensor(pair[1]))) {
                         for (const pair of obj) {
                             weights.set(i.toString() + '.' + pair[0], pair[1]);
                         }

@@ -12,21 +12,19 @@ xmodel.ModelFactory = class {
         return undefined;
     }
 
-    open(context) {
-        return context.require('./xmodel-proto').then(() => {
-            let graph = null;
-            try {
-                xmodel.proto = protobuf.get('xmodel').serial_v2;
-                const stream = context.stream;
-                const reader = protobuf.BinaryReader.open(stream);
-                graph = xmodel.proto.Graph.decode(reader);
-            }
-            catch (error) {
-                const message = error && error.message ? error.message : error.toString();
-                throw new xmodel.Error('File format is not serial_v2.Graph (' + message.replace(/\.$/, '') + ').');
-            }
-            return new xmodel.Model(graph);
-        });
+    async open(context) {
+        await context.require('./xmodel-proto');
+        let graph = null;
+        try {
+            xmodel.proto = protobuf.get('xmodel').serial_v2;
+            const stream = context.stream;
+            const reader = protobuf.BinaryReader.open(stream);
+            graph = xmodel.proto.Graph.decode(reader);
+        } catch (error) {
+            const message = error && error.message ? error.message : error.toString();
+            throw new xmodel.Error('File format is not serial_v2.Graph (' + message.replace(/\.$/, '') + ').');
+        }
+        return new xmodel.Model(graph);
     }
 };
 
@@ -143,8 +141,7 @@ xmodel.Argument = class {
             if (tensor && tensor.tensor_attr && tensor.data_type) {
                 if (initializer) {
                     this._initializer = new xmodel.Tensor(node);
-                }
-                else {
+                } else {
                     this._type = new xmodel.TensorType(tensor);
                 }
             }
@@ -194,11 +191,9 @@ xmodel.Node = class {
                     let activation = value.value;
                     if (typeof activation === 'string') {
                         activation = activation.toLowerCase();
-                    }
-                    else if (Number.isInteger(activation) && activation < 5) {
+                    } else if (Number.isInteger(activation) && activation < 5) {
                         activation = [ 'none', 'relu', 'prelu', 'leakyrelu', 'relu6' ][activation];
-                    }
-                    else {
+                    } else {
                         activation = JSON.stringify(activation);
                     }
                     this._chain.push(new xmodel.Node(metadata, { op_type: activation }, arg));

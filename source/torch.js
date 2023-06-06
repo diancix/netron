@@ -7,27 +7,25 @@ torch.ModelFactory = class {
         return torch.T7Reader.open(context);
     }
 
-    open(context, match) {
-        return context.metadata('torch-metadata.json').then((metadata) => {
-            const reader = match;
-            reader.callback = (name) => {
-                if (name && name != 'nn.JointTrainModule' && !name.startsWith('nn.MSDNet_') && !name.startsWith('onmt.')) {
-                    context.exception(new torch.Error("Unsupported type '" + name + "'."));
-                }
-                return null;
-            };
-            const obj = reader.read();
-            let graphs = [];
-            if (obj && Array.isArray(obj) && obj.length >= 2 &&
-                obj.slice(0, obj.length - 1).every((item) => item.__class__) &&
-                !obj[obj.length - 1].__class__) {
-                graphs = obj.slice(0, obj.length - 1);
+    async open(context, match) {
+        const metadata = await context.metadata('torch-metadata.json');
+        const reader = match;
+        reader.callback = (name) => {
+            if (name && name != 'nn.JointTrainModule' && !name.startsWith('nn.MSDNet_') && !name.startsWith('onmt.')) {
+                context.exception(new torch.Error("Unsupported type '" + name + "'."));
             }
-            else {
-                graphs = [ obj ];
-            }
-            return new torch.Model(metadata, graphs);
-        });
+            return null;
+        };
+        const obj = reader.read();
+        let graphs = [];
+        if (obj && Array.isArray(obj) && obj.length >= 2 &&
+            obj.slice(0, obj.length - 1).every((item) => item.__class__) &&
+            !obj[obj.length - 1].__class__) {
+            graphs = obj.slice(0, obj.length - 1);
+        } else {
+            graphs = [ obj ];
+        }
+        return new torch.Model(metadata, graphs);
     }
 };
 
@@ -249,8 +247,7 @@ torch.Node = class {
         if (module.name && typeof module.name === 'string') {
             this._name = module.name;
             delete module.name;
-        }
-        else {
+        } else {
             this._name = this._group ? (this._group + ':' + name) : name;
         }
         const type = module.__class__ ? module.__class__.__module__ + '.' + module.__class__.__name__ : 'nn.Module';
@@ -464,8 +461,7 @@ torch.Attribute = class {
         if (schema) {
             if (Object.prototype.hasOwnProperty.call(schema, 'visible')) {
                 this._visible = schema.visible;
-            }
-            else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
+            } else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
                 if (JSON.stringify(schema.default) == JSON.stringify(this._value)) {
                     this._visible = false;
                 }
@@ -1002,8 +998,7 @@ torch.T7Reader = class {
         if (version.startsWith('V ')) {
             name = this.string();
             version = Number(version.split(' ')[1]);
-        }
-        else {
+        } else {
             name = version;
             version = 0;
         }
@@ -1017,8 +1012,7 @@ torch.T7Reader = class {
         this._memo.set(index, obj);
         if (obj.read) {
             obj.read(this, version);
-        }
-        else {
+        } else {
             const attributes = this.read();
             if (attributes != null) {
                 for (const entry of Object.entries(attributes)) {
@@ -1046,8 +1040,7 @@ torch.T7Reader = class {
             table[key] = value;
             if (Number.isInteger(key) && key >= 0) {
                 sum += key;
-            }
-            else {
+            } else {
                 convert = false;
             }
         }
@@ -1189,8 +1182,7 @@ torch.TextReader = class {
             const c = this._buffer[this._position++];
             if (c == this._separator) {
                 return this._buffer.slice(start, this._position - 1);
-            }
-            else if (this._position == this._buffer.length) {
+            } else if (this._position == this._buffer.length) {
                 return this._buffer.slice(start, this._position);
             }
             size--;

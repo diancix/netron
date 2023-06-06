@@ -42,38 +42,37 @@ openvino.ModelFactory = class {
         return undefined;
     }
 
-    open(context, match) {
-        const open = (stream, bin) => {
-            return context.metadata('openvino-metadata.json').then((metadata) => {
-                let document = null;
-                try {
-                    const reader = xml.TextReader.open(stream);
-                    document = reader.read();
-                }
-                catch (error) {
-                    const message = error && error.message ? error.message : error.toString();
-                    throw new openvino.Error('File format is not OpenVINO XML (' + message.replace(/\.$/, '') + ').');
-                }
-                if (!document.documentElement || document.documentElement.localName != 'net') {
-                    throw new openvino.Error('File format is not OpenVINO IR.');
-                }
-                const net = openvino.XmlReader.read(document.documentElement);
-                return new openvino.Model(metadata, net, bin);
-            });
+    async open(context, match) {
+        const open = async (stream, bin) => {
+            const metadata = await context.metadata('openvino-metadata.json');
+            let document = null;
+            try {
+                const reader = xml.TextReader.open(stream);
+                document = reader.read();
+            } catch (error) {
+                const message = error && error.message ? error.message : error.toString();
+                throw new openvino.Error('File format is not OpenVINO XML (' + message.replace(/\.$/, '') + ').');
+            }
+            if (!document.documentElement || document.documentElement.localName != 'net') {
+                throw new openvino.Error('File format is not OpenVINO IR.');
+            }
+            const net = openvino.XmlReader.read(document.documentElement);
+            return new openvino.Model(metadata, net, bin);
         };
         const identifier = context.identifier;
         switch (match) {
             case 'openvino.xml':
-                return context.request(identifier.substring(0, identifier.length - 4) + '.bin', null).then((stream) => {
+                try {
+                    const stream = await context.request(identifier.substring(0, identifier.length - 4) + '.bin', null);
                     const buffer = stream.read();
                     return open(context.stream, buffer);
-                }).catch(() => {
+                } catch (error) {
                     return open(context.stream, null);
-                });
-            case 'openvino.bin':
-                return context.request(identifier.substring(0, identifier.length - 4) + '.xml', null).then((stream) => {
-                    return open(stream, context.stream.peek());
-                });
+                }
+            case 'openvino.bin': {
+                const stream = await context.request(identifier.substring(0, identifier.length - 4) + '.xml', null);
+                return open(stream, context.stream.peek());
+            }
             default:
                 throw new openvino.Error("Unsupported OpenVINO format '" + match + "'.");
         }
@@ -285,8 +284,7 @@ openvino.Graph = class {
                                 argumentWithoutId._name = potentialParentInput.arguments[0].name;
                             }
                         }
-                    }
-                    else {
+                    } else {
                         if (!nestedNode._inputs) {
                             throw new openvino.Error("Tensor Iterator node with name '" + nestedNode._id + "' does not have inputs.");
                         }
@@ -300,8 +298,7 @@ openvino.Graph = class {
                             if (argumentWithoutId) {
                                 argumentWithoutId._name = newId;
                             }
-                        }
-                        else {
+                        } else {
                             // TODO: no tensor information in the new argument - passed as null for now
                             nestedNode._inputs.push(new openvino.Parameter((nestedNode._inputs.length + 1).toString(), [
                                 new openvino.Argument(newId, null, null)
@@ -725,8 +722,7 @@ openvino.Attribute = class {
                                 const intValue = Number.parseInt(item, 10);
                                 if (Number.isNaN(item - intValue)) {
                                     ints = null;
-                                }
-                                else if (ints != null) {
+                                } else if (ints != null) {
                                     ints.push(intValue);
                                 }
                             }
@@ -743,8 +739,7 @@ openvino.Attribute = class {
                                 const floatValue = Number.parseFloat(item);
                                 if (Number.isNaN(item - floatValue)) {
                                     floats = null;
-                                }
-                                else if (floats != null) {
+                                } else if (floats != null) {
                                     floats.push(floatValue);
                                 }
                             }
@@ -759,13 +754,11 @@ openvino.Attribute = class {
             }
             if (Object.prototype.hasOwnProperty.call(schema, 'visible') && schema.visible == false) {
                 this._visible = false;
-            }
-            else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
+            } else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
                 let defaultValue = schema.default;
                 if (this._value == defaultValue) {
                     this._visible = false;
-                }
-                else if (Array.isArray(this._value) && Array.isArray(defaultValue)) {
+                } else if (Array.isArray(this._value) && Array.isArray(defaultValue)) {
                     defaultValue = defaultValue.slice(0, defaultValue.length);
                     if (defaultValue.length > 1 && defaultValue[defaultValue.length - 1] == null) {
                         defaultValue.pop();

@@ -35,38 +35,35 @@ megengine.ModelFactory = class {
         return '';
     }
 
-    open(context, match) {
-        return context.metadata('megengine-metadata.json').then((metadata) => {
-            switch (match) {
-                case 'megengine.tm': {
-                    const obj = context.open('pkl');
-                    return new megengine.Model(metadata, obj, match);
-                }
-                case 'megengine.mge': {
-                    return context.require('./megengine-schema').then(() => {
-                        megengine.schema = flatbuffers.get('megengine').mgb.serialization.fbs;
-                        let model = null;
-                        const stream = context.stream;
-                        try {
-                            const buffer = stream.peek(12);
-                            const tag = String.fromCharCode.apply(null, buffer);
-                            stream.skip(tag.startsWith('mgbtest0') ? 12 : 0);
-                            stream.skip(4);
-                            const reader = flatbuffers.BinaryReader.open(stream);
-                            model = megengine.schema.v2.Model.create(reader);
-                        }
-                        catch (error) {
-                            const message = error && error.message ? error.message : error.toString();
-                            throw new megengine.Error('File format is not megengine.Model (' + message.replace(/\.$/, '') + ').');
-                        }
-                        return new megengine.Model(metadata, model, match);
-                    });
-                }
-                default: {
-                    throw new megengine.Error("Unsupported MegEngine format '" + match.replace(/^megengine\./, '') + "'.");
-                }
+    async open(context, match) {
+        const metadata = await context.metadata('megengine-metadata.json');
+        switch (match) {
+            case 'megengine.tm': {
+                const obj = context.open('pkl');
+                return new megengine.Model(metadata, obj, match);
             }
-        });
+            case 'megengine.mge': {
+                await context.require('./megengine-schema');
+                megengine.schema = flatbuffers.get('megengine').mgb.serialization.fbs;
+                let model = null;
+                const stream = context.stream;
+                try {
+                    const buffer = stream.peek(12);
+                    const tag = String.fromCharCode.apply(null, buffer);
+                    stream.skip(tag.startsWith('mgbtest0') ? 12 : 0);
+                    stream.skip(4);
+                    const reader = flatbuffers.BinaryReader.open(stream);
+                    model = megengine.schema.v2.Model.create(reader);
+                } catch (error) {
+                    const message = error && error.message ? error.message : error.toString();
+                    throw new megengine.Error('File format is not megengine.Model (' + message.replace(/\.$/, '') + ').');
+                }
+                return new megengine.Model(metadata, model, match);
+            }
+            default: {
+                throw new megengine.Error("Unsupported MegEngine format '" + match.replace(/^megengine\./, '') + "'.");
+            }
+        }
     }
 };
 
@@ -154,8 +151,7 @@ megengine.Graph = class {
                             if (!isTensor(state[key])) {
                                 const attribute = new megengine.Attribute(null, key, state[key] !== null ? state[key] : 'None');
                                 op._attributes.push(attribute);
-                            }
-                            else {
+                            } else {
                                 const tensor = state[key];
                                 const type = getTensorType(tensor.dtype, tensor.data.shape);
                                 const data = tensor.data.data;
@@ -239,8 +235,7 @@ megengine.Graph = class {
                     }
                     if (obj.const_val !== null) {
                         return obj.const_val;
-                    }
-                    else if (obj.type[0].__module__ !== undefined) {
+                    } else if (obj.type[0].__module__ !== undefined) {
                         return obj.type[0].__name__;
                     }
                     return 'None';
@@ -249,11 +244,9 @@ megengine.Graph = class {
                 for (const arg of args.children_defs) {
                     if (meta.attributes === undefined || (meta.attributes.length !== args.children_defs.length && meta.varargs === null)) {
                         attrName = 'arg' + argIdx;
-                    }
-                    else if (argIdx < meta.attributes.length) {
+                    } else if (argIdx < meta.attributes.length) {
                         attrName = meta.attributes[argIdx].name;
-                    }
-                    else {
+                    } else {
                         attrName = meta.varargs + (argIdx - meta.attributes.length);
                     }
                     const rst = processArgs(formatTreeDef(arg), inpIdx);
@@ -336,8 +329,7 @@ megengine.Graph = class {
                                     const internalName = getFullName(prefix, internalGraph._outputs[i]._name);
                                     if (context.get(internalName) !== undefined) {
                                         context.set(actualName, context.get(internalName));
-                                    }
-                                    else {
+                                    } else {
                                         context.set(internalName, actualName);
                                     }
                                 }
@@ -351,8 +343,7 @@ megengine.Graph = class {
                             }
                             const node = getOpNode(metadata, item, expr, state);
                             this._nodes.push(node);
-                        }
-                        else {
+                        } else {
                             const item = { 'name': '', 'type': expr.method };
                             const args = expr.arg_def.children_defs[0];
                             const kwargs = expr.arg_def.children_defs[1];
@@ -423,12 +414,10 @@ megengine.Graph = class {
                 }
                 const argument = new megengine.Argument(name, type, initializer, quantization);
                 args.push(argument);
-            }
-            else if (opr.shape) {
+            } else if (opr.shape) {
                 const type = new megengine.TensorType('?', new megengine.TensorShape(opr.shape));
                 args.push(new megengine.Argument(name, type));
-            }
-            else {
+            } else {
                 const argument = new megengine.Argument(name);
                 args.push(argument);
             }
@@ -451,8 +440,7 @@ megengine.Graph = class {
                         const _opr = allOprAndTensor.get(keyId);
                         _opr.extraInfo = getExtraInfo(_opr);
                     }
-                }
-                else {
+                } else {
                     const keyId = opr.outputs[0];
                     opr.name = obj.middle_tensors[keyId] ? obj.middle_tensors[keyId].name : String(keyId);
                     if (obj.middle_tensors[keyId] && obj.middle_tensors[keyId].shape) {
@@ -471,8 +459,7 @@ megengine.Graph = class {
             if (opr.type === 'Host2DeviceCopy') {
                 const parameter = new megengine.Parameter('input', true, opr.extraInfo.args);
                 this._inputs.push(parameter);
-            }
-            else if (opr.type !== 'ImmutableTensor') {
+            } else if (opr.type !== 'ImmutableTensor') {
                 this._nodes.push(new megengine.Node(metadata, opr, allOprAndTensor));
             }
         }
@@ -642,11 +629,9 @@ megengine.Attribute = class {
         if (megengine.schema) {
             if (megengine.schema.param[this._type]) {
                 this._value = megengine.Utility.enum(megengine.schema.param, this._type, this._value);
-            }
-            else if (megengine.schema[this._type]) {
+            } else if (megengine.schema[this._type]) {
                 this._value = megengine.Utility.enum(megengine.schema, this._type, this._value);
-            }
-            else if (megengine.schema.v2[this._type]) {
+            } else if (megengine.schema.v2[this._type]) {
                 this._value = megengine.Utility.enum(megengine.schema.v2, this._type, this._value);
             }
         }

@@ -2369,7 +2369,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float32`, `float64`, `int32`, `uint8`, `int16`, `int8`, `int64`, `bfloat16`, `uint16`, `float16`, `uint32`, `uint64`, `complex64`, `complex128`, `bool`, `variant`."
+        "description": "Must be one of the following: `float32`, `float64`, `int32`, `uint8`, `int16`, `int8`, `int64`, `bfloat16`, `uint16`, `float16`, `uint32`, `uint64`, `complex64`, `complex128`, `bool`, `variant`, `string`."
       },
       {
         "name": "precision",
@@ -9163,6 +9163,15 @@
         "name": "N",
         "type": "int64",
         "minimum": 2
+      },
+      {
+        "name": "shape_type",
+        "type": "type",
+        "description": "Must be one of the following: `int32`, `int64`.",
+        "default": {
+          "type": "type",
+          "value": 3
+        }
       }
     ],
     "inputs": [
@@ -9173,17 +9182,17 @@
       },
       {
         "name": "shape",
-        "description": "The `N` int32 vectors representing shape of tensors being concatenated.",
+        "description": "The `N` int32 or int64 vectors representing shape of tensors being concatenated.",
         "numberAttr": "N",
-        "type": 3
+        "typeAttr": "shape_type"
       }
     ],
     "outputs": [
       {
         "name": "offset",
-        "description": "The `N` int32 vectors representing the starting offset\nof input tensors within the concatenated output.",
+        "description": "The `N` vectors representing the starting offset\nof input tensors within the concatenated output with type matching `shape`.",
         "numberAttr": "N",
-        "type": 3
+        "typeAttr": "shape_type"
       }
     ]
   },
@@ -10697,7 +10706,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "rnn_mode",
@@ -10783,7 +10792,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "rnn_mode",
@@ -10892,7 +10901,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "rnn_mode",
@@ -11005,7 +11014,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "rnn_mode",
@@ -11132,7 +11141,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "num_params",
@@ -11212,7 +11221,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "num_params_weights",
@@ -11302,7 +11311,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "S",
@@ -11377,7 +11386,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "num_params",
@@ -11457,7 +11466,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "num_params_weights",
@@ -11547,7 +11556,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "rnn_mode",
@@ -11637,7 +11646,7 @@
       {
         "name": "T",
         "type": "type",
-        "description": "Must be one of the following: `float16`, `float32`, `float64`."
+        "description": "Must be one of the following: `bfloat16`, `float16`, `float32`, `float64`."
       },
       {
         "name": "rnn_mode",
@@ -12353,6 +12362,13 @@
     "name": "DatasetCardinality",
     "summary": "Returns the cardinality of `input_dataset`.",
     "description": "Returns the cardinality of `input_dataset`.",
+    "attributes": [
+      {
+        "name": "cardinality_options",
+        "type": "string",
+        "default": ""
+      }
+    ],
     "inputs": [
       {
         "name": "input_dataset",
@@ -12677,6 +12693,72 @@
         "name": "tfdbg_run_id",
         "type": "string",
         "default": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "description": "Input tensor, non-Reference type",
+        "typeAttr": "T"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "typeAttr": "T"
+      }
+    ]
+  },
+  {
+    "name": "DebugIdentityV3",
+    "summary": "Provides an identity mapping of the non-Ref type input tensor for debugging.",
+    "description": "Provides an identity mapping of the non-Ref type input tensor for debugging.",
+    "attributes": [
+      {
+        "name": "T",
+        "type": "type"
+      },
+      {
+        "name": "device_name",
+        "type": "string",
+        "description": "Name of the device on which the tensor resides.",
+        "default": ""
+      },
+      {
+        "name": "tensor_name",
+        "type": "string",
+        "description": "Name of the input tensor.",
+        "default": ""
+      },
+      {
+        "name": "io_of_node",
+        "type": "string",
+        "description": "Name of the node of which the tensor is an input or output.",
+        "default": ""
+      },
+      {
+        "name": "is_input",
+        "type": "boolean",
+        "description": "If true, the tensor is an input of the node; otherwise the output.",
+        "default": false
+      },
+      {
+        "name": "io_index",
+        "type": "int64",
+        "description": "The index of which the tensor is an input or output of the node.",
+        "default": -1
+      },
+      {
+        "name": "debug_urls",
+        "type": "string[]",
+        "description": "List of URLs to debug targets, e.g.,\n  file:///foo/tfdbg_dump, grpc:://localhost:11011",
+        "default": []
+      },
+      {
+        "name": "gated_grpc",
+        "type": "boolean",
+        "description": "Whether this op will be gated. If any of the debug_urls of this\n  debug node is of the grpc:// scheme, when the value of this attribute is set\n  to True, the data will not actually be sent via the grpc stream unless this\n  debug op has been enabled at the debug_url. If all of the debug_urls of this\n  debug node are of the grpc:// scheme and the debug op is enabled at none of\n  them, the output will be an empty Tensor.",
+        "default": false
       }
     ],
     "inputs": [
@@ -23656,7 +23738,7 @@
   {
     "name": "LinSpace",
     "summary": "Generates values in an interval.",
-    "description": "A sequence of `num` evenly-spaced values are generated beginning at `start`.\nIf `num > 1`, the values in the sequence increase by `stop - start / num - 1`,\nso that the last one is exactly `stop`.\n\nFor example:\n\n```\ntf.linspace(10.0, 12.0, 3, name=\"linspace\") => [ 10.0  11.0  12.0]\n```",
+    "description": "A sequence of `num` evenly-spaced values are generated beginning at `start`.\nIf `num > 1`, the values in the sequence increase by\n`(stop - start) / (num - 1)`, so that the last one is exactly `stop`.\n\nFor example:\n\n```\ntf.linspace(10.0, 12.0, 3, name=\"linspace\") => [ 10.0  11.0  12.0]\n```",
     "attributes": [
       {
         "name": "T",
@@ -37024,6 +37106,80 @@
     ]
   },
   {
+    "name": "RaggedFillEmptyRows",
+    "attributes": [
+      {
+        "name": "T",
+        "type": "type"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "value_rowids",
+        "type": 9
+      },
+      {
+        "name": "values",
+        "typeAttr": "T"
+      },
+      {
+        "name": "nrows",
+        "type": 9
+      },
+      {
+        "name": "default_value",
+        "typeAttr": "T"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output_value_rowids",
+        "type": 9
+      },
+      {
+        "name": "output_values",
+        "typeAttr": "T"
+      },
+      {
+        "name": "empty_row_indicator",
+        "type": 10
+      },
+      {
+        "name": "reverse_index_map",
+        "type": 9
+      }
+    ]
+  },
+  {
+    "name": "RaggedFillEmptyRowsGrad",
+    "attributes": [
+      {
+        "name": "T",
+        "type": "type"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "reverse_index_map",
+        "type": 9
+      },
+      {
+        "name": "grad_values",
+        "typeAttr": "T"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "d_values",
+        "typeAttr": "T"
+      },
+      {
+        "name": "d_default_value",
+        "typeAttr": "T"
+      }
+    ]
+  },
+  {
     "name": "RaggedGather",
     "summary": "Gather ragged slices from `params` axis `0` according to `indices`.",
     "description": "Outputs a `RaggedTensor` output composed from `output_dense_values` and\n`output_nested_splits`, such that:\n\n```python\noutput.shape = indices.shape + params.shape[1:]\noutput.ragged_rank = indices.shape.ndims + params.ragged_rank\noutput[i...j, d0...dn] = params[indices[i...j], d0...dn]\n```\n\nwhere\n\n* `params =\n   ragged.from_nested_row_splits(params_dense_values, params_nested_splits)`\n   provides the values that should be gathered.\n* `indices` ia a dense tensor with dtype `int32` or `int64`, indicating which\n   values should be gathered.\n* `output =\n   ragged.from_nested_row_splits(output_dense_values, output_nested_splits)`\n   is the output tensor.\n\n(Note: This c++ op is used to implement the higher-level python\n`tf.ragged.gather` op, which also supports ragged indices.)\n",
@@ -39384,10 +39540,14 @@
     ]
   },
   {
-    "name": "RelayoutGrad",
+    "name": "RelayoutLike",
     "attributes": [
       {
         "name": "T",
+        "type": "type"
+      },
+      {
+        "name": "U",
         "type": "type"
       }
     ],
@@ -39397,8 +39557,8 @@
         "typeAttr": "T"
       },
       {
-        "name": "forward_input",
-        "typeAttr": "T"
+        "name": "layout_input",
+        "typeAttr": "U"
       }
     ],
     "outputs": [
@@ -46902,6 +47062,54 @@
     ]
   },
   {
+    "name": "SegmentMaxV2",
+    "summary": "Computes the maximum along segments of a tensor.",
+    "description": "Read\n[the section on segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)\nfor an explanation of segments.\n\nComputes a tensor such that\n\\\\(output_i = \\max_j(data_j)\\\\) where `max` is over `j` such\nthat `segment_ids[j] == i`.\n\nIf the maximum is empty for a given segment ID `i`, it outputs the smallest\npossible value for the specific numeric type,\n`output[i] = numeric_limits<T>::lowest()`.\n\nNote: That this op is currently only supported with jit_compile=True.\n\nCaution: On CPU, values in `segment_ids` are always validated to be sorted,\nand an error is thrown for indices that are not increasing. On GPU, this\ndoes not throw an error for unsorted indices. On GPU, out-of-order indices\nresult in safe but unspecified behavior, which may include treating\nout-of-order indices as the same as a smaller following index.\n\nThe only difference with SegmentMax is the additional input  `num_segments`.\nThis helps in evaluating the output shape in compile time.\n`num_segments` should be consistent with segment_ids.\ne.g. Max(segment_ids) should be equal to `num_segments` - 1 for a 1-d segment_ids\nWith inconsistent num_segments, the op still runs. only difference is,\nthe output takes the size of num_segments irrespective of size of segment_ids and data.\nfor num_segments less than expected output size, the last elements are ignored\nfor num_segments more than the expected output size, last elements are assigned \nsmallest possible value for the specific numeric type.\n\nFor example:\n\n>>> @tf.function(jit_compile=True)\n... def test(c):\n...   return tf.raw_ops.SegmentMaxV2(data=c, segment_ids=tf.constant([0, 0, 1]), num_segments=2)\n>>> c = tf.constant([[1,2,3,4], [4, 3, 2, 1], [5,6,7,8]])\n>>> test(c).numpy()\narray([[4, 3, 3, 4],\n       [5, 6, 7, 8]], dtype=int32)\n",
+    "attributes": [
+      {
+        "name": "T",
+        "type": "type",
+        "description": "Must be one of the following: `float32`, `float64`, `int32`, `uint8`, `int16`, `int8`, `int64`, `bfloat16`, `uint16`, `float16`, `uint32`, `uint64`."
+      },
+      {
+        "name": "Tindices",
+        "type": "type",
+        "description": "Must be one of the following: `int32`, `int64`."
+      },
+      {
+        "name": "Tnumsegments",
+        "type": "type",
+        "description": "Must be one of the following: `int32`, `int64`.",
+        "default": {
+          "type": "type",
+          "value": 3
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "name": "data",
+        "typeAttr": "T"
+      },
+      {
+        "name": "segment_ids",
+        "description": "A 1-D tensor whose size is equal to the size of `data`'s\nfirst dimension.  Values should be sorted and can be repeated.\nThe values must be less than `num_segments`.\n\nCaution: The values are always validated to be sorted on CPU, never validated\non GPU.",
+        "typeAttr": "Tindices"
+      },
+      {
+        "name": "num_segments",
+        "typeAttr": "Tnumsegments"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "description": "Has same shape as data, except for the first `segment_ids.rank`\ndimensions, which are replaced with a single dimensionw which has size\n`num_segments`.\n",
+        "typeAttr": "T"
+      }
+    ]
+  },
+  {
     "name": "SegmentMean",
     "summary": "Computes the mean along segments of a tensor.",
     "description": "Read\n[the section on segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)\nfor an explanation of segments.\n\nComputes a tensor such that\n\\\\(output_i = \\frac{\\sum_j data_j}{N}\\\\) where `mean` is\nover `j` such that `segment_ids[j] == i` and `N` is the total number of\nvalues summed.\n\nIf the mean is empty for a given segment ID `i`, `output[i] = 0`.\n\nCaution: On CPU, values in `segment_ids` are always validated to be sorted,\nand an error is thrown for indices that are not increasing. On GPU, this\ndoes not throw an error for unsorted indices. On GPU, out-of-order indices\nresult in safe but unspecified behavior, which may include treating\nout-of-order indices as a smaller following index when computing the numerator\nof the mean.\n\n<div style=\"width:70%; margin:auto; margin-bottom:10px; margin-top:20px;\">\n<img style=\"width:100%\" src=\"https://www.tensorflow.org/images/SegmentMean.png\" alt>\n</div>\n\nFor example:\n\n>>> c = tf.constant([[1.0,2,3,4], [4, 3, 2, 1], [5,6,7,8]])\n>>> tf.math.segment_mean(c, tf.constant([0, 0, 1])).numpy()\narray([[2.5, 2.5, 2.5, 2.5],\n       [5., 6., 7., 8.]], dtype=float32)\n",
@@ -46967,6 +47175,54 @@
       {
         "name": "output",
         "description": "Has same shape as data, except for dimension 0 which\nhas size `k`, the number of segments.",
+        "typeAttr": "T"
+      }
+    ]
+  },
+  {
+    "name": "SegmentMinV2",
+    "summary": "Computes the minimum along segments of a tensor.",
+    "description": "Read\n[the section on segmentation](https://tensorflow.org/api_docs/python/tf/math#Segmentation)\nfor an explanation of segments.\n\nComputes a tensor such that\n\\\\(output_i = \\min_j(data_j)\\\\) where `min` is over `j` such\nthat `segment_ids[j] == i`.\n\nIf the minimum is empty for a given segment ID `i`, it outputs the largest\npossible value for the specific numeric type,\n`output[i] = numeric_limits<T>::max()`.\n\nNote: That this op is currently only supported with jit_compile=True.\n\nCaution: On CPU, values in `segment_ids` are always validated to be sorted,\nand an error is thrown for indices that are not increasing. On GPU, this\ndoes not throw an error for unsorted indices. On GPU, out-of-order indices\nresult in safe but unspecified behavior, which may include treating\nout-of-order indices as the same as a smaller following index.\n\nThe only difference with SegmentMin is the additional input  `num_segments`.\nThis helps in evaluating the output shape in compile time.\n`num_segments` should be consistent with segment_ids.\ne.g. Max(segment_ids) should be equal to `num_segments` - 1 for a 1-d segment_ids\nWith inconsistent num_segments, the op still runs. only difference is,\nthe output takes the size of num_segments irrespective of size of segment_ids and data.\nfor num_segments less than expected output size, the last elements are ignored\nfor num_segments more than the expected output size, last elements are assigned \nthe largest possible value for the specific numeric type.\n\nFor example:\n\n>>> @tf.function(jit_compile=True)\n... def test(c):\n...   return tf.raw_ops.SegmentMinV2(data=c, segment_ids=tf.constant([0, 0, 1]), num_segments=2)\n>>> c = tf.constant([[1,2,3,4], [4, 3, 2, 1], [5,6,7,8]])\n>>> test(c).numpy()\narray([[1, 2, 2, 1],\n       [5, 6, 7, 8]], dtype=int32)\n",
+    "attributes": [
+      {
+        "name": "T",
+        "type": "type",
+        "description": "Must be one of the following: `float32`, `float64`, `int32`, `uint8`, `int16`, `int8`, `int64`, `bfloat16`, `uint16`, `float16`, `uint32`, `uint64`."
+      },
+      {
+        "name": "Tindices",
+        "type": "type",
+        "description": "Must be one of the following: `int32`, `int64`."
+      },
+      {
+        "name": "Tnumsegments",
+        "type": "type",
+        "description": "Must be one of the following: `int32`, `int64`.",
+        "default": {
+          "type": "type",
+          "value": 3
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "name": "data",
+        "typeAttr": "T"
+      },
+      {
+        "name": "segment_ids",
+        "description": "A 1-D tensor whose size is equal to the size of `data`'s\nfirst dimension.  Values should be sorted and can be repeated.\nThe values must be less than `num_segments`.\n\nCaution: The values are always validated to be sorted on CPU, never validated\non GPU.",
+        "typeAttr": "Tindices"
+      },
+      {
+        "name": "num_segments",
+        "typeAttr": "Tnumsegments"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "description": "Has same shape as data, except for the first `segment_ids.rank`\ndimensions, which are replaced with a single dimensionw which has size\n`num_segments`.",
         "typeAttr": "T"
       }
     ]
@@ -47534,7 +47790,7 @@
   {
     "name": "SetSize",
     "summary": "Number of unique elements along last dimension of input `set`.",
-    "description": "Input `set` is a `SparseTensor` represented by `set_indices`, `set_values`,\nand `set_shape`. The last dimension contains values in a set, duplicates are\nallowed but ignored.\n\nIf `validate_indices` is `True`, this op validates the order and range of `set`\nindices.",
+    "description": "Input `set` is a `SparseTensor` represented by `set_indices`, `set_values`,\nand `set_shape`. The last dimension contains values in a set, duplicates are\nallowed but ignored.\n\nIf `validate_indices` is `True`, this op validates the order and range of `set`\nindices. Setting is to `False` while passing invalid arguments results in\nundefined behavior.",
     "attributes": [
       {
         "name": "validate_indices",
@@ -48457,6 +48713,38 @@
       {
         "name": "output",
         "typeAttr": "T"
+      }
+    ]
+  },
+  {
+    "name": "SnapshotChunkDataset",
+    "attributes": [
+      {
+        "name": "output_types",
+        "type": "type[]",
+        "minimum": 1
+      },
+      {
+        "name": "output_shapes",
+        "type": "shape[]",
+        "minimum": 1
+      },
+      {
+        "name": "compression",
+        "type": "string",
+        "default": ""
+      }
+    ],
+    "inputs": [
+      {
+        "name": "chunk_file",
+        "type": 7
+      }
+    ],
+    "outputs": [
+      {
+        "name": "handle",
+        "type": 21
       }
     ]
   },
@@ -55144,6 +55432,52 @@
     ]
   },
   {
+    "name": "StochasticCastToInt",
+    "summary": "Stochastically cast a given tensor from floats to ints.",
+    "description": "The values are cast with a deterministic pseudo-random tensor from a uniform distribution generated from user given key, counter, algorithm. Values will saturate if out of the specified integer type range, and will become zero if inputs are NaN.  \n\nThe outputs are a deterministic function of `input`, `key`, `counter`, `alg`.\n",
+    "attributes": [
+      {
+        "name": "Tin",
+        "type": "type",
+        "description": "The type of the input. Must be one of the following: `float16`, `bfloat16`, `float32`, `float64`."
+      },
+      {
+        "name": "Tout",
+        "type": "type",
+        "description": "The type of the output. Must be one of the following: `int8`, `int16`, `int32`."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "description": "The operand to stochastically cast to int.",
+        "typeAttr": "Tin"
+      },
+      {
+        "name": "key",
+        "description": "Key for the counter-based RNG algorithm (shape uint64[1]).",
+        "type": 23
+      },
+      {
+        "name": "counter",
+        "description": "Initial counter for the counter-based RNG algorithm (shape uint64[2] or uint64[1] depending on the algorithm). If a larger vector is given, only the needed portion on the left (i.e. [:N]) will be used.",
+        "type": 23
+      },
+      {
+        "name": "alg",
+        "description": "The RNG algorithm (shape int32[]).",
+        "type": 3
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "description": "The cast result with the same shape as the input.",
+        "typeAttr": "Tout"
+      }
+    ]
+  },
+  {
     "name": "StopGradient",
     "summary": "Stops gradient computation.",
     "description": "When executed in a graph, this op outputs its input tensor as-is.\n\nWhen building ops to compute gradients, this op prevents the contribution of\nits inputs to be taken into account.  Normally, the gradient generator adds ops\nto a graph to compute the derivatives of a specified 'loss' by recursively\nfinding out inputs that contributed to its computation.  If you insert this op\nin the graph it inputs are masked from the gradient generator.  They are not\ntaken into account for computing gradients.\n\nThis is useful any time you want to compute a value with TensorFlow but need\nto pretend that the value was a constant. For example, the softmax function\nfor a vector x can be written as\n\n```python\n\n  def softmax(x):\n    numerator = tf.exp(x)\n    denominator = tf.reduce_sum(numerator)\n    return numerator / denominator\n```\n\nThis however is susceptible to overflow if the values in x are large. An\nalternative more stable way is to subtract the maximum of x from each of the\nvalues.\n\n```python\n\n  def stable_softmax(x):\n    z = x - tf.reduce_max(x)\n    numerator = tf.exp(z)\n    denominator = tf.reduce_sum(numerator)\n    return numerator / denominator\n```\n\nHowever, when we backprop through the softmax to x, we dont want to backprop\nthrough the `tf.reduce_max(x)` (if the max values are not unique then the\ngradient could flow to the wrong input) calculation and treat that as a\nconstant. Therefore, we should write this out as\n\n```python\n\n  def stable_softmax(x):\n    z = x - tf.stop_gradient(tf.reduce_max(x))\n    numerator = tf.exp(z)\n    denominator = tf.reduce_sum(numerator)\n    return numerator / denominator\n```\n\nSome other examples include:\n\n*  The *EM* algorithm where the *M-step* should not involve backpropagation\n   through the output of the *E-step*.\n*  Contrastive divergence training of Boltzmann machines where, when\n   differentiating the energy function, the training must not backpropagate\n   through the graph that generated the samples from the model.\n*  Adversarial training, where no backprop should happen through the adversarial\n   example generation process.",
@@ -55432,7 +55766,7 @@
       {
         "name": "N",
         "type": "int64",
-        "minimum": 1
+        "minimum": 0
       },
       {
         "name": "separator",
@@ -59681,6 +60015,24 @@
         "name": "T",
         "type": "type",
         "description": "Must be one of the following: `float32`, `float64`, `int32`, `uint8`, `int16`, `int8`, `int64`, `bfloat16`, `uint16`, `float16`, `uint32`, `uint64`."
+      },
+      {
+        "name": "Tk",
+        "type": "type",
+        "description": "Must be one of the following: `int16`, `int32`, `int64`.",
+        "default": {
+          "type": "type",
+          "value": 3
+        }
+      },
+      {
+        "name": "index_type",
+        "type": "type",
+        "description": "Must be one of the following: `int16`, `int32`, `int64`.",
+        "default": {
+          "type": "type",
+          "value": 3
+        }
       }
     ],
     "inputs": [
@@ -59692,7 +60044,7 @@
       {
         "name": "k",
         "description": "0-D.  Number of top elements to look for along the last dimension (along each\nrow for matrices).",
-        "type": 3
+        "typeAttr": "Tk"
       }
     ],
     "outputs": [
@@ -59704,7 +60056,7 @@
       {
         "name": "indices",
         "description": "The indices of `values` within the last dimension of `input`.",
-        "type": 3
+        "typeAttr": "index_type"
       }
     ]
   },
@@ -61752,7 +62104,7 @@
       {
         "name": "Tindices",
         "type": "type",
-        "description": "Must be one of the following: `int32`, `int64`."
+        "description": "Must be one of the following: `int16`, `int32`, `int64`."
       },
       {
         "name": "Tnumsegments",

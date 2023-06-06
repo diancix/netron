@@ -19,19 +19,16 @@ weka.ModelFactory = class {
                     }
                 }
             }
-        }
-        catch (err) {
+        } catch (err) {
             // continue regardless of error
         }
         return undefined;
     }
 
-    open(context) {
-        return Promise.resolve().then(() => {
-            const reader = new java.io.InputObjectStream(context.stream);
-            const obj = reader.read();
-            throw new weka.Error("Unsupported type '" + obj.$class.name + "'.");
-        });
+    async open(context) {
+        const reader = new java.io.InputObjectStream(context.stream);
+        const obj = reader.read();
+        throw new weka.Error("Unsupported type '" + obj.$class.name + "'.");
     }
 };
 
@@ -110,7 +107,7 @@ java.io.InputObjectStream = class {
         switch (code) {
             case 0x72: { // TC_CLASSDESC
                 const classDesc = {};
-                classDesc.name = this._reader.string(),
+                classDesc.name = this._reader.string();
                 classDesc.id = this._reader.uint64().toString();
                 this._newHandle(classDesc);
                 classDesc.flags = this._reader.byte();

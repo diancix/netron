@@ -12,13 +12,13 @@ const base = require('./base');
 host.ElectronHost = class {
 
     constructor() {
-        process.on('uncaughtException', (err) => {
-            this.exception(err, true);
-            this._message(err.message);
-            this.document.body.setAttribute('class', 'welcome message');
-        });
         this._document = window.document;
         this._window = window;
+        this._telemetry = new base.Telemetry(this._window);
+        process.on('uncaughtException', (err) => {
+            this.exception(err, true);
+            this._terminate(err.message);
+        });
         this._window.eval = global.eval = () => {
             throw new Error('window.eval() not supported.');
         };
@@ -32,14 +32,11 @@ host.ElectronHost = class {
         });
         this._environment = electron.ipcRenderer.sendSync('get-environment', {});
         this._environment.menu = this._environment.titlebar && this._environment.platform !== 'darwin';
-        this._queue = [];
+        this._element('menu-button').style.opacity = 0;
+        this._files = [];
         if (!/^\d\.\d\.\d$/.test(this.version)) {
             throw new Error('Invalid version.');
         }
-    }
-
-    static create() {
-        return Promise.resolve(new host.ElectronHost());
     }
 
     get window() {
@@ -58,89 +55,75 @@ host.ElectronHost = class {
         return 'Electron';
     }
 
-    view(view) {
+    async view(view) {
         this._view = view;
         electron.ipcRenderer.on('open', (_, data) => {
-            this._openPath(data.path);
+            this._open(data);
         });
-        return this._age().then(() => this._consent()).then(() => this._telemetry());
-    }
-
-    _age() {
-        const age = (new Date() - new Date(this._environment.date)) / (24 * 60 * 60 * 1000);
-        if (age <= 180) {
-            return Promise.resolve();
-        }
-        const callback = () => {
-            const link = this._element('logo-github').href;
-            this.openURL(link);
-        };
-        this._message('Please update to the newest version.', 'Download', callback, true);
-        return new Promise(() => {});
-    }
-
-    _consent() {
-        const time = this._getConfiguration('consent');
-        if (time && (Date.now() - time) < 30 * 24 * 60 * 60 * 1000) {
-            return Promise.resolve();
-        }
-        const consent = () => {
-            return new Promise((resolve /*, reject */) => {
-                this._message('This app uses cookies to report errors and anonymous usage information.', 'Accept', () => {
-                    this._setConfiguration('consent', Date.now());
-                    resolve();
+        const age = async () => {
+            const days = (new Date() - new Date(this._environment.date)) / (24 * 60 * 60 * 1000);
+            if (days > 180) {
+                this._view.show('welcome');
+                this._terminate('Please update to the newest version.', 'Download', () => {
+                    const link = this._element('logo-github').href;
+                    this.openURL(link);
                 });
-            });
+                return new Promise(() => {});
+            }
+            return Promise.resolve();
         };
-        return this._request('https://ipinfo.io/json', { 'Content-Type': 'application/json' }, 2000).then((text) => {
-            try {
-                const json = JSON.parse(text);
-                const countries = ['AT', 'BE', 'BG', 'HR', 'CZ', 'CY', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'NO', 'PL', 'PT', 'SK', 'ES', 'SE', 'GB', 'UK', 'GR', 'EU', 'RO'];
-                if (json && json.country && countries.indexOf(json.country) === -1) {
-                    this._setConfiguration('consent', Date.now());
-                    return Promise.resolve();
+        const consent = async () => {
+            const time = this._getConfiguration('consent');
+            if (!time || (Date.now() - time) > 30 * 24 * 60 * 60 * 1000) {
+                let consent = true;
+                try {
+                    const content = await this._request('https://ipinfo.io/json', { 'Content-Type': 'application/json' }, 2000);
+                    const json = JSON.parse(content);
+                    const countries = ['AT', 'BE', 'BG', 'HR', 'CZ', 'CY', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'NO', 'PL', 'PT', 'SK', 'ES', 'SE', 'GB', 'UK', 'GR', 'EU', 'RO'];
+                    if (json && json.country && countries.indexOf(json.country) === -1) {
+                        consent = false;
+                    }
+                } catch (error) {
+                    // continue regardless of error
                 }
-                return consent();
+                if (consent) {
+                    await this._message('This app uses cookies to report errors and anonymous usage information.', 'Accept');
+                }
+                this._setConfiguration('consent', Date.now());
             }
-            catch (err) {
-                return consent();
-            }
-        }).catch(() => {
-            return consent();
-        });
-    }
-
-    _telemetry() {
-        if (this._environment.packaged) {
-            const measurement_id = '848W2NVWVH';
-            const user = this._getConfiguration('user') || null;
-            const session = this._getConfiguration('session') || null;
-            this._telemetry_ga4 = new base.Telemetry(this._window, 'G-' + measurement_id, user && user.indexOf('.') !== -1 ? user : null, session);
-            this._telemetry_ga4.start().then(() => {
-                this._telemetry_ga4.send('page_view', {
+        };
+        const telemetry = async () => {
+            if (this._environment.packaged) {
+                const measurement_id = '848W2NVWVH';
+                const user = this._getConfiguration('user') || null;
+                const session = this._getConfiguration('session') || null;
+                await this._telemetry.start('G-' + measurement_id, user && user.indexOf('.') !== -1 ? user : null, session);
+                this._telemetry.send('page_view', {
                     app_name: this.type,
                     app_version: this.version,
                 });
-                this._telemetry_ga4.send('scroll', {
+                this._telemetry.send('scroll', {
                     percent_scrolled: 90,
                     app_name: this.type,
                     app_version: this.version
                 });
-                this._setConfiguration('user', this._telemetry_ga4.get('client_id'));
-                this._setConfiguration('session', this._telemetry_ga4.session);
-                this._telemetry_ua = new host.Telemetry('UA-54146-13', this._telemetry_ga4.get('client_id'), navigator.userAgent, this.type, this.version);
-            });
-        }
-        return Promise.resolve();
+                this._setConfiguration('user', this._telemetry.get('client_id'));
+                this._setConfiguration('session', this._telemetry.session);
+                this._telemetry_ua = new host.Telemetry('UA-54146-13', this._telemetry.get('client_id'), navigator.userAgent, this.type, this.version);
+            }
+        };
+        await age();
+        await consent();
+        await telemetry();
     }
 
     start() {
-        if (this._queue) {
-            const queue = this._queue;
-            delete this._queue;
-            if (queue.length > 0) {
-                const path = queue.pop();
-                this._openPath(path);
+        if (this._files) {
+            const files = this._files;
+            delete this._files;
+            if (files.length > 0) {
+                const data = files.pop();
+                this._open(data);
             }
         }
 
@@ -153,6 +136,9 @@ host.ElectronHost = class {
         if (this._document.hasFocus()) {
             this._document.body.classList.add('active');
         }
+        electron.ipcRenderer.on('recents', (_, data) => {
+            this._view.recents(data);
+        });
         electron.ipcRenderer.on('export', (_, data) => {
             this._view.export(data.file);
         });
@@ -188,13 +174,8 @@ host.ElectronHost = class {
             this._view.find();
         });
         electron.ipcRenderer.on('about', () => {
-            this.about();
+            this._view.about();
         });
-
-        electron.ipcRenderer.on('update-configuration', (_, data) => {
-            this._view.update(data.name, data.value);
-        });
-        this._view.update('recents', this._getConfiguration('recents'));
 
         this._element('titlebar-close').addEventListener('click', () => {
             electron.ipcRenderer.sendSync('window-close', {});
@@ -211,10 +192,14 @@ host.ElectronHost = class {
                 this._element('graph').style.height = 'calc(100% - 32px)';
                 this._element('sidebar-title').style.marginTop = '24px';
                 this._element('sidebar-closebutton').style.marginTop = '24px';
+                this._element('titlebar').classList.add('titlebar-visible');
             }
-            this._element('titlebar').style.display = this._environment.titlebar ? 'block' : 'none';
+            if (this._environment.titlebar && this._environment.platform !== 'darwin' && !data.fullscreen) {
+                this._element('titlebar-control-box').classList.add('titlebar-control-box-visible');
+            } else {
+                this._element('titlebar-control-box').classList.remove('titlebar-control-box-visible');
+            }
             this._element('menu-button').style.opacity = this._environment.menu ? 1 : 0;
-            this._element('titlebar-control-box').style.opacity = this._environment.titlebar && this._environment.platform !== 'darwin' && !data.fullscreen ? 1 : 0;
             this._element('titlebar-maximize').style.opacity = data.maximized ? 0 : 1;
             this._element('titlebar-restore').style.opacity = data.maximized ? 1 : 0;
             this._element('titlebar-toggle').setAttribute('title', data.maximized ? 'Restore' : 'Maximize');
@@ -249,17 +234,16 @@ host.ElectronHost = class {
         return this._environment[name];
     }
 
-    error(message, detail, url) {
+    async error(message, detail) {
         const options = {
             type: 'error',
             message: message,
             detail: detail,
             buttons: [ 'Report', 'Cancel' ]
         };
-        if (electron.ipcRenderer.sendSync('show-message-box', options) === 0) {
-            url = url || this.environment('repository') + '/issues';
-            this.openURL(url);
-        }
+        return electron.ipcRenderer.sendSync('show-message-box', options);
+        // await this._message(message + ': ' + detail, 'Report');
+        // return 0;
     }
 
     confirm(message, detail) {
@@ -274,14 +258,8 @@ host.ElectronHost = class {
         return result === 0;
     }
 
-    require(id) {
-        try {
-            const module = require(id);
-            return Promise.resolve(module);
-        }
-        catch (error) {
-            return Promise.reject(error);
-        }
+    async require(id) {
+        return require(id);
     }
 
     save(name, extension, defaultPath, callback) {
@@ -296,7 +274,7 @@ host.ElectronHost = class {
         }
     }
 
-    export(file, blob) {
+    async export(file, blob) {
         const reader = new FileReader();
         reader.onload = (e) => {
             const data = new Uint8Array(e.target.result);
@@ -311,16 +289,14 @@ host.ElectronHost = class {
         let err = null;
         if (!blob) {
             err = new Error("Export blob is '" + JSON.stringify(blob) + "'.");
-        }
-        else if (!(blob instanceof Blob)) {
+        } else if (!(blob instanceof Blob)) {
             err = new Error("Export blob type is '" + (typeof blob) + "'.");
         }
 
         if (err) {
             this.exception(err, false);
-            this.error('Error exporting image.', err.message);
-        }
-        else {
+            await this.error('Error exporting image.', err.message);
+        } else {
             reader.readAsArrayBuffer(blob);
         }
     }
@@ -329,33 +305,27 @@ host.ElectronHost = class {
         electron.ipcRenderer.send('execute', { name: name, value: value });
     }
 
-    request(file, encoding, base) {
+    async request(file, encoding, basename) {
         return new Promise((resolve, reject) => {
-            const pathname = path.join(base || __dirname, file);
+            const pathname = path.join(basename || __dirname, file);
             fs.stat(pathname, (err, stat) => {
                 if (err && err.code === 'ENOENT') {
                     reject(new Error("The file '" + file + "' does not exist."));
-                }
-                else if (err) {
+                } else if (err) {
                     reject(err);
-                }
-                else if (!stat.isFile()) {
+                } else if (!stat.isFile()) {
                     reject(new Error("The path '" + file + "' is not a file."));
-                }
-                else if (stat && stat.size < 0x7ffff000) {
+                } else if (stat && stat.size < 0x7ffff000) {
                     fs.readFile(pathname, encoding, (err, data) => {
                         if (err) {
                             reject(err);
-                        }
-                        else {
-                            resolve(encoding ? data : new host.ElectronHost.BinaryStream(data));
+                        } else {
+                            resolve(encoding ? data : new base.BinaryStream(data));
                         }
                     });
-                }
-                else if (encoding) {
+                } else if (encoding) {
                     reject(new Error("The file '" + file + "' size (" + stat.size.toString() + ") for encoding '" + encoding + "' is greater than 2 GB."));
-                }
-                else {
+                } else {
                     resolve(new host.ElectronHost.FileStream(pathname, 0, stat.size, stat.mtimeMs));
                 }
             });
@@ -367,7 +337,7 @@ host.ElectronHost = class {
     }
 
     exception(error, fatal) {
-        if ((this._telemetry_ua || this._telemetry_ga4) && error) {
+        if ((this._telemetry_ua || this._telemetry) && error) {
             try {
                 const name = error.name ? error.name + ': ' : '';
                 const message = error.message ? error.message : JSON.stringify(error);
@@ -381,13 +351,11 @@ host.ElectronHost = class {
                     const match = error.stack.match(/\n {4}at (.*) \((.*):(\d*):(\d*)\)/);
                     if (match) {
                         stack = match[1] + ' (' + format(match[2], match[3], match[4]) + ')';
-                    }
-                    else {
+                    } else {
                         const match = error.stack.match(/\n {4}at (.*):(\d*):(\d*)/);
                         if (match) {
                             stack = '(' + format(match[1], match[2], match[3]) + ')';
-                        }
-                        else {
+                        } else {
                             const match = error.stack.match(/.*\n\s*(.*)\s*/);
                             if (match) {
                                 stack = match[1];
@@ -401,19 +369,16 @@ host.ElectronHost = class {
                 if (this._telemetry_ua) {
                     this._telemetry_ua.exception(stack ? description + ' @ ' + stack : description, fatal);
                 }
-                if (this._telemetry_ga4) {
-                    this._telemetry_ga4.send('exception', {
-                        app_name: this.type,
-                        app_version: this.version,
-                        error_name: name,
-                        error_message: message,
-                        error_context: context,
-                        error_stack: stack,
-                        error_fatal: fatal ? true : false
-                    });
-                }
-            }
-            catch (e) {
+                this._telemetry.send('exception', {
+                    app_name: this.type,
+                    app_version: this.version,
+                    error_name: name,
+                    error_message: message,
+                    error_context: context,
+                    error_stack: stack,
+                    error_fatal: fatal ? true : false
+                });
+            } catch (e) {
                 // continue regardless of error
             }
         }
@@ -423,36 +388,28 @@ host.ElectronHost = class {
         if (this._telemetry_ua && category && action && label) {
             try {
                 this._telemetry_ua.event(category, action, label, value);
-            }
-            catch (e) {
+            } catch (e) {
                 // continue regardless of error
             }
         }
     }
 
     event(name, params) {
-        if (this._telemetry_ga4 && name && params) {
-            try {
-                params.app_name = this.type,
-                params.app_version = this.version,
-                this._telemetry_ga4.send(name, params);
-            }
-            catch (e) {
-                // continue regardless of error
-            }
+        if (name && params) {
+            params.app_name = this.type;
+            params.app_version = this.version;
+            this._telemetry.send(name, params);
         }
     }
 
-    _context(location) {
+    async _context(location) {
         const basename = path.basename(location);
         const stat = fs.statSync(location);
         if (stat.isFile()) {
             const dirname = path.dirname(location);
-            return this.request(basename, null, dirname).then((stream) => {
-                return new host.ElectronHost.Context(this, dirname, basename, stream);
-            });
-        }
-        else if (stat.isDirectory()) {
+            const stream = await this.request(basename, null, dirname);
+            return new host.ElectronHost.Context(this, dirname, basename, stream);
+        } else if (stat.isDirectory()) {
             const entries = new Map();
             const walk = (dir) => {
                 for (const item of fs.readdirSync(dir)) {
@@ -460,8 +417,7 @@ host.ElectronHost = class {
                     const stat = fs.statSync(pathname);
                     if (stat.isDirectory()) {
                         walk(pathname);
-                    }
-                    else if (stat.isFile()) {
+                    } else if (stat.isFile()) {
                         const stream = new host.ElectronHost.FileStream(pathname, 0, stat.size, stat.mtimeMs);
                         const name = pathname.split(path.sep).join(path.posix.sep);
                         entries.set(name, stream);
@@ -469,44 +425,45 @@ host.ElectronHost = class {
                 }
             };
             walk(location);
-            return Promise.resolve(new host.ElectronHost.Context(this, location, basename, null, entries));
+            return new host.ElectronHost.Context(this, location, basename, null, entries);
         }
         throw new Error("Unsupported path stat '" + JSON.stringify(stat) + "'.");
     }
 
-    _openPath(path) {
-        if (this._queue) {
-            this._queue.push(path);
+    async _open(location) {
+        if (this._files) {
+            this._files.push(location);
             return;
         }
+        const path = location.path;
         const stat = fs.existsSync(path) ? fs.statSync(path) : null;
         const size = stat && stat.isFile() ? stat.size : 0;
         if (path && this._view.accept(path, size)) {
             this._view.show('welcome spinner');
-            this._context(path).then((context) => {
-                if (this._telemetry_ga4) {
-                    this._telemetry_ga4.set('session_engaged', 1);
-                }
-                this._view.open(context).then((model) => {
+            try {
+                const context = await this._context(path);
+                this._telemetry.set('session_engaged', 1);
+                try {
+                    const model = await this._view.open(context);
                     this._view.show(null);
                     const options = Object.assign({}, this._view.options);
                     if (model) {
                         options.path = path;
+                        this._title(location.label);
                     }
-                    this._title(path);
                     this._update(options);
-                }).catch((error) => {
+                } catch (error) {
                     const options = Object.assign({}, this._view.options);
                     if (error) {
-                        this._view.error(error, null, null);
+                        await this._view.error(error, null, null);
                         options.path = null;
                     }
                     this._update(options);
-                });
-            }).catch((error) => {
-                this._view.error(error, 'Error while reading file.', null);
+                }
+            } catch (error) {
+                await this._view.error(error, 'Error while reading file.', null);
                 this._update({ path: null });
-            });
+            }
         }
     }
 
@@ -526,8 +483,7 @@ host.ElectronHost = class {
                     err.url = location;
                     err.status = response.statusCode;
                     reject(err);
-                }
-                else {
+                } else {
                     let data = '';
                     response.on('data', (chunk) => {
                         data += chunk;
@@ -562,21 +518,12 @@ host.ElectronHost = class {
         electron.ipcRenderer.sendSync('set-configuration', { name: name, value: value });
     }
 
-    _minimizePath(path) {
-        if (this._environment.platform !== 'win32' && this._environment.homedir) {
-            if (path.startsWith(this._environment.homedir)) {
-                return '~' + path.substring(this._environment.homedir.length);
-            }
-        }
-        return path;
-    }
-
-    _title(path) {
+    _title(label) {
         const element = this._element('titlebar-content-text');
         if (element) {
             element.innerHTML = '';
-            if (path) {
-                path = this._minimizePath(path).split(this._environment.separator || '/');
+            if (label) {
+                const path = label.split(this._environment.separator || '/');
                 for (let i = 0; i < path.length; i++) {
                     const span = this.document.createElement('span');
                     span.innerHTML = ' ' + path[i] + ' ' + (i !== path.length - 1 ? '<svg class="titlebar-icon" aria-hidden="true"><use xlink:href="#icon-arrow-right"></use></svg>' : '');
@@ -594,30 +541,40 @@ host.ElectronHost = class {
         electron.ipcRenderer.send('window-update', data);
     }
 
-    _message(message, action, callback, modal) {
-        const messageText = this._element('message-text');
-        if (messageText) {
-            messageText.innerText = message;
+    _terminate(message, action, callback) {
+        this._element('message-text').innerText = message;
+        const button = this._element('message-button');
+        if (action && callback) {
+            button.style.removeProperty('display');
+            button.innerText = action;
+            button.onclick = () => callback();
+            button.focus();
+        } else {
+            button.style.display = 'none';
+            button.onclick = null;
         }
-        const messageButton = this._element('message-button');
-        if (messageButton) {
-            if (action && callback) {
-                messageButton.style.removeProperty('display');
-                messageButton.innerText = action;
-                messageButton.onclick = () => {
-                    if (!modal) {
-                        messageButton.onclick = null;
-                        this._document.body.classList.remove('message');
-                    }
-                    callback();
+        this._document.body.setAttribute('class', 'welcome message');
+    }
+
+    _message(message, action) {
+        return new Promise((resolve) => {
+            this._element('message-text').innerText = message;
+            const button = this._element('message-button');
+            if (action) {
+                button.style.removeProperty('display');
+                button.innerText = action;
+                button.onclick = () => {
+                    button.onclick = null;
+                    this._document.body.classList.remove('message');
+                    resolve();
                 };
+                button.focus();
+            } else {
+                button.style.display = 'none';
+                button.onclick = null;
             }
-            else {
-                messageButton.style.display = 'none';
-                messageButton.onclick = null;
-            }
-        }
-        this._document.body.classList.add('message');
+            this._document.body.classList.add('message');
+        });
     }
 };
 
@@ -676,69 +633,6 @@ host.Telemetry = class {
         request.on('error', (/* error */) => {});
         request.write(body);
         request.end();
-    }
-};
-
-host.ElectronHost.BinaryStream = class {
-
-    constructor(buffer) {
-        this._buffer = buffer;
-        this._length = buffer.length;
-        this._position = 0;
-    }
-
-    get position() {
-        return this._position;
-    }
-
-    get length() {
-        return this._length;
-    }
-
-    stream(length) {
-        const buffer = this.read(length);
-        return new host.ElectronHost.BinaryStream(buffer.slice(0));
-    }
-
-    seek(position) {
-        this._position = position >= 0 ? position : this._length + position;
-        if (this._position > this._buffer.length) {
-            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
-        }
-    }
-
-    skip(offset) {
-        this._position += offset;
-        if (this._position > this._buffer.length) {
-            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
-        }
-    }
-
-    peek(length) {
-        if (this._position === 0 && length === undefined) {
-            return this._buffer;
-        }
-        const position = this._position;
-        this.skip(length !== undefined ? length : this._length - this._position);
-        const end = this._position;
-        this.seek(position);
-        return this._buffer.subarray(position, end);
-    }
-
-    read(length) {
-        if (this._position === 0 && length === undefined) {
-            this._position = this._length;
-            return this._buffer;
-        }
-        const position = this._position;
-        this.skip(length !== undefined ? length : this._length - this._position);
-        return this._buffer.subarray(position, this._position);
-    }
-
-    byte() {
-        const position = this._position;
-        this.skip(1);
-        return this._buffer[position];
     }
 };
 
@@ -832,8 +726,7 @@ host.ElectronHost.FileStream = class {
         }
         try {
             fs.readSync(descriptor, buffer, 0, buffer.length, offset + this._start);
-        }
-        finally {
+        } finally {
             fs.closeSync(descriptor);
         }
     }
@@ -877,8 +770,7 @@ host.ElectronHost.Context = class {
 window.addEventListener('load', () => {
     global.protobuf = require('./protobuf');
     global.flatbuffers = require('./flatbuffers');
-    host.ElectronHost.create().then((host) => {
-        const view = require('./view');
-        window.__view__ = new view.View(host);
-    });
+    const value = new host.ElectronHost();
+    const view = require('./view');
+    window.__view__ = new view.View(value);
 });

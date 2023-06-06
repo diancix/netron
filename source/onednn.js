@@ -13,13 +13,9 @@ onednn.ModelFactory = class {
         return null;
     }
 
-    open(context, match) {
-        return context.metadata('onednn-metadata.json').then((metadata) => {
-            if (match) {
-                return new onednn.Model(metadata, match);
-            }
-            throw new onednn.Error("Unsupported oneDNN Graph format '" + match + "'.");
-        });
+    async open(context, match) {
+        const metadata = await context.metadata('onednn-metadata.json');
+        return new onednn.Model(metadata, match);
     }
 };
 
@@ -68,6 +64,38 @@ onednn.Graph = class {
             if (!(node.kind == 'Wildcard' && node.inputs.length == 0)) {
                 this._nodes.push(new onednn.Node(this._metadata, node, symbol.engine_kind, initializers));
             }
+        }
+
+        const values = [];
+        for (const node of symbol.graph) {
+            for (const input of node.inputs) {
+                values.push(input);
+            }
+            for (const output of node.outputs) {
+                values.push(output);
+            }
+        }
+        let inputIndex = 0;
+        const inputs = symbol.input_ports || [];
+        for (const input_id of inputs) {
+            const input = values.find((value) => value.id == input_id);
+            const shape = !input.shape || (input.shape.length === 1 && input.shape[0] === -1) ? null : new onednn.TensorShape(input.shape);
+            const type = new onednn.TensorType(input.dtype, shape);
+            const inputName = (inputs.length == 1) ? 'input' : ('input' + (inputIndex)).toString();
+            this._inputs.push(new onednn.Parameter(inputName, [
+                new onednn.Argument(input.id.toString(), type, initializers.includes(input.id) ? new onednn.Tensor(type, input.property_type) : null)
+            ]));
+            inputIndex += 1;
+        }
+        let outputIndex = 0;
+        const outputs = symbol.output_ports || [];
+        for (const output_id of outputs) {
+            const output = values.find((value) => value.id == output_id);
+            const shape = !output.shape || (output.shape.length === 1 && output.shape[0] === -1) ? null : new onednn.TensorShape(output.shape);
+            const type = new onednn.TensorType(output.dtype, shape);
+            const outputName = (outputs.length == 1) ? 'output' : ('output' + (outputIndex)).toString();
+            this._outputs.push(new onednn.Parameter(outputName, [new onednn.Argument(output.id.toString(), type)]));
+            outputIndex += 1;
         }
     }
 
@@ -198,8 +226,7 @@ onednn.Attribute = class {
                         number = Number.parseInt(item, 10);
                         if (Number.isNaN(item - number)) {
                             array = null;
-                        }
-                        else if (array != null) {
+                        } else if (array != null) {
                             array.push(number);
                         }
                     }
@@ -224,8 +251,7 @@ onednn.Attribute = class {
                         number = Number.parseFloat(item);
                         if (Number.isNaN(item - number)) {
                             array = null;
-                        }
-                        else if (array != null) {
+                        } else if (array != null) {
                             array.push(number);
                         }
                     }
@@ -314,6 +340,7 @@ onednn.TensorType = class {
             case 's32': this._dataType = 'int32'; break;
             case 'u8': this._dataType = 'uint8'; break;
             case 'bf16': this._dataType = 'bfloat16'; break;
+            case 'boolean': this._dataType = 'boolean'; break;
             case 'undef': this._dataType = '?'; break;
             default: throw new onednn.Error("Unsupported tensor data type '" + dataType.toString() + "'.");
         }

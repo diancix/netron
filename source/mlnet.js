@@ -17,12 +17,11 @@ mlnet.ModelFactory = class {
         return null;
     }
 
-    open(context) {
-        return context.metadata('mlnet-metadata.json').then((metadata) => {
-            const entries = context.entries('zip');
-            const reader = new mlnet.ModelReader(entries);
-            return new mlnet.Model(metadata, reader);
-        });
+    async open(context) {
+        const metadata = await context.metadata('mlnet-metadata.json');
+        const entries = context.entries('zip');
+        const reader = new mlnet.ModelReader(entries);
+        return new mlnet.Model(metadata, reader);
     }
 };
 
@@ -107,8 +106,7 @@ mlnet.Graph = class {
                     const next = output.name + '\n' + scope[output.name].counter.toString(); // custom argument id
                     scope[output.name].argument = next;
                     output.name = next;
-                }
-                else {
+                } else {
                     scope[output.name] = {
                         argument: output.name,
                         counter: 0
@@ -307,20 +305,16 @@ mlnet.TensorType = class {
 
         if (mlnet.TensorType._map.has(codec.name)) {
             this._dataType = mlnet.TensorType._map.get(codec.name);
-        }
-        else if (codec.name == 'VBuffer') {
+        } else if (codec.name == 'VBuffer') {
             if (mlnet.TensorType._map.has(codec.itemType.name)) {
                 this._dataType = mlnet.TensorType._map.get(codec.itemType.name);
-            }
-            else {
+            } else {
                 throw new mlnet.Error("Unsupported data type '" + codec.itemType.name + "'.");
             }
             this._shape = new mlnet.TensorShape(codec.dims);
-        }
-        else if (codec.name == 'Key2') {
+        } else if (codec.name == 'Key2') {
             this._dataType = 'key2';
-        }
-        else {
+        } else {
             throw new mlnet.Error("Unsupported data type '" + codec.name + "'.");
         }
     }
@@ -833,8 +827,7 @@ mlnet.ColumnConcatenatingTransformer = class {
                     this.inputs.push(input);
                 }
             }
-        }
-        else {
+        } else {
             this.precision = reader.int32();
             const n = reader.int32();
             const names = [];
@@ -975,8 +968,7 @@ mlnet.AffineNormSerializationUtils = class {
         if (morphCount == -1) {
             this.ScalesSparse = reader.float32s(reader.int32());
             this.OffsetsSparse = reader.float32s(reader.int32());
-        }
-        else {
+        } else {
             // debugger;
         }
     }
@@ -1125,8 +1117,7 @@ mlnet.LinearModelParameterStatistics = class extends mlnet.ModelStatisticsBase {
         const length = reader.int32();
         if (length == this.ParametersCount) {
             this._coeffStdError = stdErrorValues;
-        }
-        else {
+        } else {
             this.stdErrorIndices = reader.int32s(this.ParametersCount);
             this._coeffStdError = stdErrorValues;
         }
@@ -1137,8 +1128,7 @@ mlnet.LinearModelParameterStatistics = class extends mlnet.ModelStatisticsBase {
 
         if (isWeightsDense) {
             this._weights = weightsValues;
-        }
-        else {
+        } else {
             this.weightsIndices = reader.int32s(weightsLength);
         }
     }
@@ -1161,8 +1151,7 @@ mlnet.LinearMulticlassModelParametersBase = class extends mlnet.ModelParametersB
                 const w = reader.float32s(numberOfFeatures);
                 this.Weights.push(w);
             }
-        }
-        else {
+        } else {
 
             const starts = reader.int32s(reader.int32());
             /* let numIndices = */ reader.int32();
@@ -1255,8 +1244,7 @@ mlnet.NgramExtractingTransformer = class extends mlnet.OneToOneTransformerBase {
         const reader = context.reader;
         if (this.inputs.length == 1) {
             this._option(context, reader, this);
-        }
-        else {
+        } else {
             // debugger;
         }
     }
@@ -1295,8 +1283,7 @@ mlnet.NgramHashingTransformer = class extends mlnet.RowToRowTransformerBase {
             for (let i = 0; i < columnsLength; i++) {
                 this.Columns.push(new NgramHashingEstimator.ColumnOptions(context));
             } */
-        }
-        else {
+        } else {
             for (let i = 0; i < columnsLength; i++) {
                 this.outputs.push(context.string());
                 const csrc = reader.int32();
@@ -1321,8 +1308,7 @@ mlnet.WordTokenizingTransformer = class extends mlnet.OneToOneTransformerBase {
             for (let i = 0; i < count; i++) {
                 this.Separators.push(String.fromCharCode(reader.int16()));
             }
-        }
-        else {
+        } else {
             // debugger;
         }
     }
@@ -1385,8 +1371,7 @@ mlnet.LpNormNormalizingTransformer = class extends mlnet.OneToOneTransformerBase
             this.EnsureZeroMean = reader.boolean();
             this.Norm = reader.byte();
             this.Scale = reader.float32();
-        }
-        else {
+        } else {
             // debugger;
         }
     }
@@ -1428,8 +1413,7 @@ mlnet.ImageResizingTransformer = class extends mlnet.OneToOneTransformerBase {
         const reader = context.reader;
         if (this.inputs.length == 1) {
             this._option(reader, this);
-        }
-        else {
+        } else {
             this.Options = [];
             for (let i = 0; i < this.inputs.length; i++) {
                 const option = {};
@@ -1468,8 +1452,7 @@ mlnet.ImagePixelExtractingTransformer = class extends mlnet.OneToOneTransformerB
         const reader = context.reader;
         if (this.inputs.length == 1) {
             this._option(context, reader, this);
-        }
-        else {
+        } else {
             this.Options = [];
             for (let i = 0; i < this.inputs.length; i++) {
                 const option = {};
@@ -1525,8 +1508,7 @@ mlnet.NormalizingTransformer = class extends mlnet.OneToOneTransformerBase {
                 isVector = reader.boolean();
                 shape = [ reader.int32() ];
                 itemKind = reader.byte();
-            }
-            else {
+            } else {
                 isVector = reader.boolean();
                 itemKind = reader.byte();
                 shape = reader.int32s(reader.int32());
@@ -1559,8 +1541,7 @@ mlnet.ValueToKeyMappingTransformer = class extends mlnet.OneToOneTransformerBase
         const reader = context.reader;
         if (context.modelVersionWritten >= 0x00010003) {
             this.textMetadata = reader.booleans(this.outputs.length + this.inputs.length);
-        }
-        else {
+        } else {
             this.textMetadata = [];
             for (let i = 0; i < this.columnPairs.length; i++) {
                 this.textMetadata.push(false);
@@ -1611,8 +1592,7 @@ mlnet.TermManager = class {
                 // debugger;
                 // termMap[i] = TermMap.Load(c, host, CodecFactory);
             }
-        }
-        else {
+        } else {
             throw new mlnet.Error('Unsupported TermManager version.');
             // for (let i = 0; i < cmap; ++i) {
             //    debugger;
@@ -1811,8 +1791,7 @@ mlnet.TextFeaturizingEstimator = class {
             }
 
             // throw new mlnet.Error('Unsupported TextFeaturizingEstimator format.');
-        }
-        else {
+        } else {
             const chain = context.open('Chain');
             this.chain = chain.chain;
         }
@@ -1936,8 +1915,7 @@ mlnet.PcaModelParameters = class extends mlnet.ModelParametersBase {
         const center = reader.boolean();
         if (center) {
             this.Mean = reader.float32s(this.Dimension);
-        }
-        else {
+        } else {
             this.Mean = [];
         }
         this.EigenVectors = [];
@@ -2419,8 +2397,7 @@ mlnet.ColumnSelectingTransformer = class {
         const reader = context.reader;
         if (context.check('DRPCOLST', 0x00010002, 0x00010002)) {
             throw new mlnet.Error("'LoadDropColumnsTransform' not supported.");
-        }
-        else if (context.check('CHSCOLSF', 0x00010001, 0x00010001)) {
+        } else if (context.check('CHSCOLSF', 0x00010001, 0x00010001)) {
             reader.int32(); // cbFloat
             this.KeepHidden = this._getHiddenOption(reader.byte());
             const count = reader.int32();
@@ -2431,8 +2408,7 @@ mlnet.ColumnSelectingTransformer = class {
                 context.string(); // src
                 this._getHiddenOption(reader.byte()); // colKeepHidden
             }
-        }
-        else {
+        } else {
             const keepColumns = reader.boolean();
             this.KeepHidden = reader.boolean();
             this.IgnoreMissing = reader.boolean();
@@ -2443,8 +2419,7 @@ mlnet.ColumnSelectingTransformer = class {
             }
             if (keepColumns) {
                 this.ColumnsToKeep = this.inputs;
-            }
-            else {
+            } else {
                 this.ColumnsToDrop = this.inputs;
             }
         }

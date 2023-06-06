@@ -10,36 +10,34 @@ rknn.ModelFactory = class {
         return rknn.Container.open(context);
     }
 
-    open(context, match) {
-        return context.require('./rknn-schema').then(() => {
-            rknn.schema = flatbuffers.get('rknn').rknn;
-            return context.metadata('rknn-metadata.json').then((metadata) => {
-                const container = match;
-                const type = container.type;
-                switch (type) {
-                    case 'json': {
-                        const buffer = container.value;
-                        const reader = json.TextReader.open(buffer);
-                        const model = reader.read();
-                        return new rknn.Model(metadata, type, model, container.next);
-                    }
-                    case 'flatbuffers': {
-                        const buffer = container.value;
-                        const reader = flatbuffers.BinaryReader.open(buffer);
-                        const model = rknn.schema.Model.create(reader);
-                        return new rknn.Model(metadata, type, model, null);
-                    }
-                    case 'openvx': {
-                        const buffer = container.value;
-                        const model = new openvx.Model(buffer);
-                        return new rknn.Model(metadata, type, model, null);
-                    }
-                    default: {
-                        throw new rknn.Error("Unsupported RKNN format '" + container.type + "'.");
-                    }
-                }
-            });
-        });
+    async open(context, match) {
+        await context.require('./rknn-schema');
+        rknn.schema = flatbuffers.get('rknn').rknn;
+        const metadata = await context.metadata('rknn-metadata.json');
+        const container = match;
+        const type = container.type;
+        switch (type) {
+            case 'json': {
+                const buffer = container.value;
+                const reader = json.TextReader.open(buffer);
+                const model = reader.read();
+                return new rknn.Model(metadata, type, model, container.next);
+            }
+            case 'flatbuffers': {
+                const buffer = container.value;
+                const reader = flatbuffers.BinaryReader.open(buffer);
+                const model = rknn.schema.Model.create(reader);
+                return new rknn.Model(metadata, type, model, null);
+            }
+            case 'openvx': {
+                const buffer = container.value;
+                const model = new openvx.Model(buffer);
+                return new rknn.Model(metadata, type, model, null);
+            }
+            default: {
+                throw new rknn.Error("Unsupported RKNN format '" + container.type + "'.");
+            }
+        }
     }
 };
 
@@ -305,14 +303,12 @@ rknn.Node = class {
                     const buffer = next.value;
                     const model = new openvx.Model(buffer);
                     this._type = new rknn.Graph(metadata, next.type, 'NBG', model, null);
-                }
-                else if (node.op === 'RKNN_OP_NNBG' && next && next.type === 'flatbuffers') {
+                } else if (node.op === 'RKNN_OP_NNBG' && next && next.type === 'flatbuffers') {
                     const buffer = next.value;
                     const reader = flatbuffers.BinaryReader.open(buffer);
                     const model = rknn.schema.Model.create(reader);
                     this._type = new rknn.Graph(metadata, next.type, 'NNBG', model.graphs[0], null);
-                }
-                else {
+                } else {
                     this._type = Object.assign({}, metadata.type(node.op) || { name: node.op });
                     for (const prefix of [ 'VSI_NN_OP_', 'RKNN_OP_' ]) {
                         this._type.name = this._type.name.startsWith(prefix) ? this._type.name.substring(prefix.length) : this._type.name;
@@ -369,8 +365,7 @@ rknn.Node = class {
                     const inputs = this._type.inputs || (node.inputs.length === 1 ? [ { name: "input" } ] : [ { name: "inputs", list: true } ]);
                     if (Array.isArray(inputs) && inputs.length > 0 && inputs[0].list === true) {
                         this._inputs = [new rknn.Parameter(inputs[0].name, Array.from(node.inputs).map((input) => arg(input))) ];
-                    }
-                    else {
+                    } else {
                         this._inputs = Array.from(node.inputs).map((input, index) => {
                             const argument = arg(input);
                             return new rknn.Parameter(index < inputs.length ? inputs[index].name : index.toString(), [ argument ]);
@@ -381,8 +376,7 @@ rknn.Node = class {
                     const outputs = this._type.outputs || (node.outputs.length === 1 ? [ { name: "output" } ] : [ { name: "outputs", list: true } ]);
                     if (Array.isArray(outputs) && outputs.length > 0 && outputs[0].list === true) {
                         this._outputs = [ new rknn.Parameter(outputs[0].name, Array.from(node.outputs).map((output) => arg(output))) ];
-                    }
-                    else {
+                    } else {
                         this._outputs = Array.from(node.outputs).map((output, index) => {
                             const argument = arg(output);
                             return new rknn.Parameter(index < outputs.length ? outputs[index].name : index.toString(), [ argument ]);
@@ -592,12 +586,13 @@ rknn.Container = class {
                         case 0x1001:
                             break;
                         case 0x0002:
+                        case 0x0004:
                             if (data_size > 0) {
                                 stream.skip(40);
                             }
                             break;
                         default:
-                            throw new rknn.Error("Unsupported container version '" + version + "'.");
+                            throw new rknn.Error("Unsupported RKNN container version '" + version + "'.");
                     }
                     this._next = new rknn.Container(stream, data_size);
                     this._next.read();
@@ -642,11 +637,9 @@ openvx.Model = class {
         this._nodes = new Array(reader.uint32());
         if (major > 3) {
             reader.skip(296);
-        }
-        else if (major > 1) {
+        } else if (major > 1) {
             reader.skip(288);
-        }
-        else {
+        } else {
             reader.skip(32);
         }
         /* const inputOffset = */ reader.uint32();

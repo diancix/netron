@@ -23,8 +23,7 @@ grapher.Graph = class {
         const value = this._nodes.get(key);
         if (value) {
             value.label = node;
-        }
-        else {
+        } else {
             this._nodes.set(key, { v: key, label: node });
             if (this._isCompound) {
                 this._parent[key] = '\x00';
@@ -96,11 +95,9 @@ grapher.Graph = class {
             if (children) {
                 return Object.keys(children);
             }
-        }
-        else if (key === '\x00') {
+        } else if (key === '\x00') {
             return this.nodes.keys();
-        }
-        else if (this.hasNode(key)) {
+        } else if (this.hasNode(key)) {
             return [];
         }
         return null;
@@ -120,6 +117,26 @@ grapher.Graph = class {
         const edgeLabelGroup = createGroup('edge-labels');
         const nodeGroup = createGroup('nodes');
 
+        /*
+        edgePathGroup.addEventListener('pointerover', (e) => {
+            if (e.target && e.target.getAttribute('class') === 'edge-path-hit-test' && e.target.previousSibling) {
+                const path = e.target.previousSibling;
+                path.classList.add('select');
+                const newPath = path.cloneNode(true);
+                path.parentNode.replaceChild(newPath, path);
+                const element = e.target;
+                const pointerleave = (e) => {
+                    element.removeEventListener('pointerleave', pointerleave);
+                    const path = element.previousSibling;
+                    const newPath = path.cloneNode(true);
+                    newPath.classList.remove('select');
+                    path.parentNode.replaceChild(newPath, path);
+                };
+                element.addEventListener('pointerleave', pointerleave);
+            }
+        });
+        */
+
         const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         edgePathGroup.appendChild(edgePathGroupDefs);
         const marker = (id) => {
@@ -138,16 +155,16 @@ grapher.Graph = class {
             element.appendChild(markerPath);
             return element;
         };
-        edgePathGroupDefs.appendChild(marker("arrowhead-vee"));
-        edgePathGroupDefs.appendChild(marker("arrowhead-vee-select"));
+        edgePathGroupDefs.appendChild(marker("arrowhead"));
+        edgePathGroupDefs.appendChild(marker("arrowhead-select"));
+        edgePathGroupDefs.appendChild(marker("arrowhead-hover"));
 
         for (const nodeId of this.nodes.keys()) {
             const node = this.node(nodeId);
             if (this.children(nodeId).length == 0) {
                 // node
                 node.label.build(document, nodeGroup);
-            }
-            else {
+            } else {
                 // cluster
                 node.label.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                 if (node.label.rx) {
@@ -175,8 +192,7 @@ grapher.Graph = class {
             if (this.children(nodeId).length == 0) {
                 // node
                 node.label.update();
-            }
-            else {
+            } else {
                 // cluster
                 const node = this.node(nodeId);
                 node.label.element.setAttribute('transform', 'translate(' + node.label.x + ',' + node.label.y + ')');
@@ -314,8 +330,7 @@ grapher.Node.Header = class {
             const entry = this._entries[i];
             if (i == 0) {
                 entry.width = entry.width + dx;
-            }
-            else {
+            } else {
                 entry.x = entry.x + dx;
                 entry.tx = entry.tx + dx;
             }
@@ -539,20 +554,23 @@ grapher.Edge = class {
         this.to = to;
     }
 
-    get arrowhead() {
-        return 'vee';
-    }
-
     build(document, edgePathGroupElement, edgeLabelGroupElement) {
         const createElement = (name) => {
             return document.createElementNS('http://www.w3.org/2000/svg', name);
         };
+        this.hitTestElement = createElement('path');
+        this.hitTestElement.setAttribute('class', 'edge-path-hit-test');
+        /* TODO */
+        edgePathGroupElement.appendChild(this.hitTestElement);
+        /* TODO */
         this.element = createElement('path');
         if (this.id) {
             this.element.setAttribute('id', this.id);
+            // TODO this.hitTestElement.setAttribute('id', this.id + '-X');
         }
         this.element.setAttribute('class', this.class ? 'edge-path ' + this.class : 'edge-path');
         edgePathGroupElement.appendChild(this.element);
+        // TODO edgePathGroupElement.appendChild(this.hitTestElement);
         if (this.label) {
             const tspan = createElement('tspan');
             tspan.setAttribute('xml:space', 'preserve');
@@ -600,6 +618,7 @@ grapher.Edge = class {
         };
         const edgePath = curvePath(this, this.from, this.to);
         this.element.setAttribute('d', edgePath);
+        this.hitTestElement.setAttribute('d', edgePath);
         if (this.labelElement) {
             this.labelElement.setAttribute('transform', 'translate(' + (this.x - (this.width / 2)) + ',' + (this.y - (this.height / 2)) + ')');
             this.labelElement.style.opacity = 1;
@@ -651,8 +670,7 @@ grapher.Edge.Curve = class {
                 this._state = 1;
                 if (this._line) {
                     this._path.lineTo(x, y);
-                }
-                else {
+                } else {
                     this._path.moveTo(x, y);
                 }
                 break;

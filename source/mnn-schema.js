@@ -182,6 +182,9 @@ $root.MNN.IDSTQuan = class IDSTQuan {
         $.aMin = reader.int32_(position, 20, 0);
         $.readType = reader.int32_(position, 22, 0);
         $.has_scaleInt = reader.bool_(position, 24, false);
+        $.shapeInt32 = reader.bool_(position, 26, false);
+        $.weightSize = reader.uint32_(position, 28, 0);
+        $.index = reader.typedArray(position, 30, Uint32Array);
         return $;
     }
 };
@@ -519,6 +522,7 @@ $root.MNN.RoiParameters = class RoiParameters {
         $.samplingRatio = reader.int32_(position, 10, -1);
         $.aligned = reader.bool_(position, 12, false);
         $.poolType = reader.int8_(position, 14, 1);
+        $.outputGrad = reader.bool_(position, 16, false);
         return $;
     }
 };
@@ -698,6 +702,7 @@ $root.MNN.StridedSliceParam = class StridedSliceParam {
         $.ellipsisMask = reader.int32_(position, 12, 0);
         $.newAxisMask = reader.int32_(position, 14, 0);
         $.shrinkAxisMask = reader.int32_(position, 16, 0);
+        $.fromType = reader.int32_(position, 18, 0);
         return $;
     }
 };

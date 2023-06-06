@@ -402,7 +402,10 @@ $root.tflite.BuiltinOperator = {
     UNSORTED_SEGMENT_SUM: 155,
     ATAN2: 156,
     UNSORTED_SEGMENT_MIN: 157,
-    SIGN: 158
+    SIGN: 158,
+    BITCAST: 159,
+    BITWISE_XOR: 160,
+    RIGHT_SHIFT: 161
 };
 
 $root.tflite.BuiltinOptions = class {
@@ -532,6 +535,9 @@ $root.tflite.BuiltinOptions = class {
             case 121: return $root.tflite.UnsortedSegmentSumOptions.decode(reader, position);
             case 122: return $root.tflite.ATan2Options.decode(reader, position);
             case 123: return $root.tflite.SignOptions.decode(reader, position);
+            case 124: return $root.tflite.BitcastOptions.decode(reader, position);
+            case 125: return $root.tflite.BitwiseXorOptions.decode(reader, position);
+            case 126: return $root.tflite.RightShiftOptions.decode(reader, position);
             default: return undefined;
         }
     }
@@ -661,6 +667,9 @@ $root.tflite.BuiltinOptions = class {
             case 'UnsortedSegmentSumOptions': return $root.tflite.UnsortedSegmentSumOptions.decodeText(reader, json);
             case 'ATan2Options': return $root.tflite.ATan2Options.decodeText(reader, json);
             case 'SignOptions': return $root.tflite.SignOptions.decodeText(reader, json);
+            case 'BitcastOptions': return $root.tflite.BitcastOptions.decodeText(reader, json);
+            case 'BitwiseXorOptions': return $root.tflite.BitwiseXorOptions.decodeText(reader, json);
+            case 'RightShiftOptions': return $root.tflite.RightShiftOptions.decodeText(reader, json);
             default: return undefined;
         }
     }
@@ -1466,6 +1475,7 @@ $root.tflite.StridedSliceOptions = class StridedSliceOptions {
         $.ellipsis_mask = reader.int32_(position, 8, 0);
         $.new_axis_mask = reader.int32_(position, 10, 0);
         $.shrink_axis_mask = reader.int32_(position, 12, 0);
+        $.offset = reader.bool_(position, 14, false);
         return $;
     }
 
@@ -1476,6 +1486,7 @@ $root.tflite.StridedSliceOptions = class StridedSliceOptions {
         $.ellipsis_mask = reader.value(json.ellipsis_mask, 0);
         $.new_axis_mask = reader.value(json.new_axis_mask, 0);
         $.shrink_axis_mask = reader.value(json.shrink_axis_mask, 0);
+        $.offset = reader.value(json.offset, false);
         return $;
     }
 };
@@ -2594,6 +2605,45 @@ $root.tflite.SignOptions = class SignOptions {
 
     static decodeText(/* reader, json */) {
         const $ = new $root.tflite.SignOptions();
+        return $;
+    }
+};
+
+$root.tflite.BitcastOptions = class BitcastOptions {
+
+    static decode(/* reader, position */) {
+        const $ = new $root.tflite.BitcastOptions();
+        return $;
+    }
+
+    static decodeText(/* reader, json */) {
+        const $ = new $root.tflite.BitcastOptions();
+        return $;
+    }
+};
+
+$root.tflite.BitwiseXorOptions = class BitwiseXorOptions {
+
+    static decode(/* reader, position */) {
+        const $ = new $root.tflite.BitwiseXorOptions();
+        return $;
+    }
+
+    static decodeText(/* reader, json */) {
+        const $ = new $root.tflite.BitwiseXorOptions();
+        return $;
+    }
+};
+
+$root.tflite.RightShiftOptions = class RightShiftOptions {
+
+    static decode(/* reader, position */) {
+        const $ = new $root.tflite.RightShiftOptions();
+        return $;
+    }
+
+    static decodeText(/* reader, json */) {
+        const $ = new $root.tflite.RightShiftOptions();
         return $;
     }
 };

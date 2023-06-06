@@ -8,32 +8,28 @@ dlc.ModelFactory = class {
         return dlc.Container.open(context);
     }
 
-    open(context, match) {
-        return context.require('./dlc-schema').then(() => {
-            dlc.schema = flatbuffers.get('dlc').dlc;
-            const container = match;
-            let model = null;
-            let params = null;
-            const metadata_props = container.metadata;
-            container.validate();
-            try {
-                model = container.model;
-            }
-            catch (error) {
-                const message = error && error.message ? error.message : error.toString();
-                throw new dlc.Error('File format is not dlc.NetDef (' + message.replace(/\.$/, '') + ').');
-            }
-            try {
-                params = container.params;
-            }
-            catch (error) {
-                const message = error && error.message ? error.message : error.toString();
-                throw new dlc.Error('File format is not dlc.NetParam (' + message.replace(/\.$/, '') + ').');
-            }
-            return context.metadata('dlc-metadata.json').then((metadata) => {
-                return new dlc.Model(metadata, model, params, metadata_props);
-            });
-        });
+    async open(context, match) {
+        await context.require('./dlc-schema');
+        dlc.schema = flatbuffers.get('dlc').dlc;
+        const container = match;
+        let model = null;
+        let params = null;
+        const metadata_props = container.metadata;
+        container.validate();
+        try {
+            model = container.model;
+        } catch (error) {
+            const message = error && error.message ? error.message : error.toString();
+            throw new dlc.Error('File format is not dlc.NetDef (' + message.replace(/\.$/, '') + ').');
+        }
+        try {
+            params = container.params;
+        } catch (error) {
+            const message = error && error.message ? error.message : error.toString();
+            throw new dlc.Error('File format is not dlc.NetParam (' + message.replace(/\.$/, '') + ').');
+        }
+        const metadata = await context.metadata('dlc-metadata.json');
+        return new dlc.Model(metadata, model, params, metadata_props);
     }
 };
 
@@ -131,8 +127,7 @@ dlc.Graph = class {
                 }
                 this._nodes.push(new dlc.Node(metadata, node, weights.get(node.name), arg));
             }
-        }
-        else {
+        } else {
             this._nodes = params.weights.map((weights) => new dlc.Node(metadata, null, weights, arg));
         }
     }
@@ -219,8 +214,7 @@ dlc.Node = class {
                     this._inputs.push(new dlc.Parameter(tensor.name, [ argument ]));
                 }
             }
-        }
-        else {
+        } else {
             this._type = { name: 'Weights' };
             this._name = weights.name;
             this._inputs = weights.tensors.map((tensor) => {

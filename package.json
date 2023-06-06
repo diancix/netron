@@ -6,40 +6,49 @@
         "email": "lutzroeder@users.noreply.github.com",
         "url": "https://www.lutzroeder.com"
     },
-    "version": "6.5.9",
-    "date": "2023-02-20 20:22:13",
+    "version": "6.9.4",
+    "date": "2023-06-03 17:30:33",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "lutzroeder/netron",
     "main": "source/app.js",
     "scripts": {
-        "postinstall": "electron-builder install-app-deps",
-        "start": "[ -d node_modules ] || npm install && npx electron .",
-        "server": "python ./publish/python.py build start"
+        "start": "node package.js start",
+        "server": "python package.py build start",
+        "test": "node test/models.js",
+        "lint": "node package.js lint",
+        "clean": "node package.js clean",
+        "purge": "node package.js purge",
+        "build": "node package.js build",
+        "publish": "node package.js publish",
+        "version": "node package.js version",
+        "coverage": "node package.js coverage",
+        "analyze": "node package.js analyze",
+        "update": "node package.js update",
+        "pull": "node package.js pull"
     },
     "dependencies": {
         "electron-updater": "5.3.0"
     },
     "devDependencies": {
-        "electron": "23.1.0",
+        "electron": "25.0.1",
         "electron-builder": "23.6.0",
         "@electron/notarize": "1.2.3",
-        "eslint": "8.34.0"
+        "eslint": "8.42.0"
     },
     "eslintConfig": {
         "env": {
-            "es6": true,
+            "es2017": true,
             "browser": true,
             "node": true
         },
         "extends": "eslint:recommended",
         "parserOptions": {
-            "ecmaVersion": 2015,
             "sourceType": "module"
         },
         "rules": {
             "array-callback-return": "error",
-            "brace-style": [ "error", "stroustrup" ],
+            "brace-style": "error",
             "curly": "error",
             "consistent-return": "error",
             "default-case": "error",
@@ -47,11 +56,13 @@
             "indent": [ "error", 4, { "SwitchCase": 1 } ],
             "keyword-spacing": "error",
             "linebreak-style": "off",
+            "no-array-constructor": "error",
             "no-await-in-loop": "error",
             "no-console": "error",
             "no-constructor-return": "error",
             "no-duplicate-imports": "error",
             "no-else-return": "error",
+            "no-extra-semi": "error",
             "no-invalid-this": "error",
             "no-iterator": "error",
             "no-labels": "error",
@@ -60,6 +71,7 @@
             "no-promise-executor-return": "error",
             "no-proto": "error",
             "no-self-compare": "error",
+            "no-sequences": "error",
             "no-template-curly-in-string": "error",
             "no-trailing-spaces": "error",
             "no-unmodified-loop-condition": "error",
@@ -91,8 +103,10 @@
             { "ext": "dlc",         "name": "DLC Model"                },
             { "ext": "dnn",         "name": "CNTK Model"               },
             { "ext": "h5",          "name": "Keras Model"              },
+            { "ext": "har",         "name": "Hailo Model"              },
             { "ext": "hd5",         "name": "Keras Model"              },
             { "ext": "hdf5",        "name": "Keras Model"              },
+            { "ext": "hn",          "name": "Hailo Model"              },
             { "ext": "keras",       "name": "Keras Model"              },
             { "ext": "kmodel",      "name": "Kendryte Model"           },
             { "ext": "lite",        "name": "TensorFlow Lite Model"    },
@@ -100,6 +114,7 @@
             { "ext": "meta",        "name": "TensorFlow Meta Graph"    },
             { "ext": "mge",         "name": "MegEngine Mge Model"      },
             { "ext": "mlmodel",     "name": "Core ML Model"            },
+            { "ext": "mlnet",       "name": "ML.NET Model"             },
             { "ext": "mlpackage",   "name": "Core ML Model Package", "isPackage": true },
             { "ext": "mnn",         "name": "MNN Model"                },
             { "ext": "model",       "name": "Model"                    },
@@ -118,6 +133,7 @@
             { "ext": "pdmodel",     "name": "PaddlePaddle Model"       },
             { "ext": "pdopt",       "name": "PaddlePaddle Model"       },
             { "ext": "pdparams",    "name": "PaddlePaddle Model"       },
+            { "ext": "pkl",         "name": "Pickle Model"             },
             { "ext": "prototxt",    "name": "Text Protocol Buffer"     },
             { "ext": "pt",          "name": "PyTorch Model"            },
             { "ext": "pth",         "name": "PyTorch Model"            },

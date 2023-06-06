@@ -22,8 +22,7 @@ tnn.ModelFactory = class {
                         }
                     }
                 }
-            }
-            catch (err) {
+            } catch (err) {
                 // continue regardless of error
             }
         }
@@ -37,30 +36,29 @@ tnn.ModelFactory = class {
         return '';
     }
 
-    open(context, match) {
-        return context.metadata('tnn-metadata.json').then((metadata) => {
-            switch (match) {
-                case 'tnn.model': {
-                    const tnnmodel = context.identifier.substring(0, context.identifier.length - 9) + '.tnnmodel';
-                    return context.request(tnnmodel, null).then((stream) => {
-                        const buffer = stream.peek();
-                        return new tnn.Model(metadata, context.stream.peek(), buffer);
-                    }).catch(() => {
-                        return new tnn.Model(metadata, context.stream.peek(), null);
-                    });
-                }
-                case 'tnn.params': {
-                    const tnnproto = context.identifier.substring(0, context.identifier.length - 9) + '.tnnproto';
-                    return context.request(tnnproto, null).then((stream) => {
-                        const buffer = stream.peek();
-                        return new tnn.Model(metadata, buffer, context.stream.peek());
-                    });
-                }
-                default: {
-                    throw new tnn.Error("Unsupported TNN format '" + match + "'.");
+    async open(context, match) {
+        const metadata = await context.metadata('tnn-metadata.json');
+        switch (match) {
+            case 'tnn.model': {
+                const tnnmodel = context.identifier.substring(0, context.identifier.length - 9) + '.tnnmodel';
+                try {
+                    const stream = await context.request(tnnmodel, null);
+                    const buffer = stream.peek();
+                    return new tnn.Model(metadata, context.stream.peek(), buffer);
+                } catch (error) {
+                    return new tnn.Model(metadata, context.stream.peek(), null);
                 }
             }
-        });
+            case 'tnn.params': {
+                const tnnproto = context.identifier.substring(0, context.identifier.length - 9) + '.tnnproto';
+                const stream = await context.request(tnnproto, null);
+                const buffer = stream.peek();
+                return new tnn.Model(metadata, buffer, context.stream.peek());
+            }
+            default: {
+                throw new tnn.Error("Unsupported TNN format '" + match + "'.");
+            }
+        }
     }
 };
 
@@ -179,8 +177,7 @@ tnn.Node = class {
             if (attributeSchema && attributeSchema.type === 'int32[]' && attributeSchema.size) {
                 name = attributeSchema.name;
                 value = attributes.splice(0, layer.attr[attributeSchema.size]).map((attribute) => parseInt(attribute.value, 10));
-            }
-            else {
+            } else {
                 const attribute = attributes.shift();
                 name = attribute.key;
                 value = attribute.value;
@@ -201,8 +198,7 @@ tnn.Node = class {
                     inputIndex += inputCount;
                 }
             }
-        }
-        else {
+        } else {
             this._inputs.push(...inputs.slice(inputIndex).map((input, index) => {
                 const inputName = ((inputIndex + index) == 0) ? 'input' : (inputIndex + index).toString();
                 return new tnn.Parameter(inputName, [ new tnn.Argument(input, null, null) ]);
@@ -222,8 +218,7 @@ tnn.Node = class {
                     outputIndex += outputCount;
                 }
             }
-        }
-        else {
+        } else {
             this._outputs.push(...outputs.slice(outputIndex).map((output, index) => {
                 const outputName = ((outputIndex + index) == 0) ? 'output' : (outputIndex + index).toString();
                 return new tnn.Parameter(outputName, [ new tnn.Argument(output, null, null) ]);
@@ -409,8 +404,7 @@ tnn.Attribute = class {
             }
             if (Object.prototype.hasOwnProperty.call(schema, 'visible') && !schema.visible) {
                 this._visible = false;
-            }
-            else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
+            } else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
                 if (this._value == schema.default || (this._value && this._value.toString() == schema.default.toString())) {
                     this._visible = false;
                 }
@@ -511,8 +505,7 @@ tnn.TextProtoReader = class {
         const header = split(lines.shift(), ' ', true, false);
         if (header.length < 3) {
             throw new tnn.Error('Invalid header size.');
-        }
-        else if (header.length > 3 && (header[3] !== '4206624770' && header[3] !== '4206624772')) {
+        } else if (header.length > 3 && (header[3] !== '4206624770' && header[3] !== '4206624772')) {
             throw new tnn.Error("Invalid signature '" + header[3] + "'.");
         }
         this._inputs = split(lines.shift(), ':', true, false).map((input) => {
