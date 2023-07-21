@@ -31,12 +31,12 @@ tflite.ModelFactory = class {
         return undefined;
     }
 
-    async open(context, match) {
+    async open(context, target) {
         await context.require('./tflite-schema');
         tflite.schema = flatbuffers.get('tflite').tflite;
         let model = null;
         const attachments = new Map();
-        switch (match) {
+        switch (target) {
             case 'tflite.flatbuffers.json': {
                 try {
                     const obj = context.open('json');
@@ -70,7 +70,7 @@ tflite.ModelFactory = class {
                 break;
             }
             default: {
-                throw new tflite.Error("Unsupported TensorFlow Lite format '" + match + "'.");
+                throw new tflite.Error("Unsupported TensorFlow Lite format '" + target + "'.");
             }
         }
         const metadata = await context.metadata('tflite-metadata.json');
@@ -198,9 +198,9 @@ tflite.Graph = class {
                     const is_variable = tensor.is_variable;
                     const data = buffer ? buffer.data : null;
                     const initializer = (data && data.length > 0) || is_variable ? new tflite.Tensor(index, tensor, buffer, is_variable) : null;
-                    tensors.set(index, new tflite.Argument(index, tensor, initializer));
+                    tensors.set(index, new tflite.Value(index, tensor, initializer));
                 } else {
-                    tensors.set(index, new tflite.Argument(index, { name: '' }, null));
+                    tensors.set(index, new tflite.Value(index, { name: '' }, null));
                 }
             }
             return tensors.get(index);
@@ -245,20 +245,20 @@ tflite.Graph = class {
         const inputs = subgraph.inputs;
         for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
-            const argument = args(input);
+            const value = args(input);
             if (subgraphMetadata && i < subgraphMetadata.input_tensor_metadata.length) {
-                applyTensorMetadata(argument, subgraphMetadata.input_tensor_metadata[i]);
+                applyTensorMetadata(value, subgraphMetadata.input_tensor_metadata[i]);
             }
-            this._inputs.push(new tflite.Parameter(argument ? argument.name : '?', true, argument ? [ argument ] : []));
+            this._inputs.push(new tflite.Argument(value ? value.name : '?', true, value ? [ value ] : []));
         }
         const outputs = subgraph.outputs;
         for (let i = 0; i < outputs.length; i++) {
             const output = outputs[i];
-            const argument = args(output);
+            const value = args(output);
             if (subgraphMetadata && i < subgraphMetadata.output_tensor_metadata.length) {
-                applyTensorMetadata(argument, subgraphMetadata.output_tensor_metadata[i]);
+                applyTensorMetadata(value, subgraphMetadata.output_tensor_metadata[i]);
             }
-            this._outputs.push(new tflite.Parameter(argument ? argument.name : '?', true, argument ? [ argument ] : []));
+            this._outputs.push(new tflite.Argument(value ? value.name : '?', true, value ? [ value ] : []));
         }
     }
 
@@ -295,36 +295,37 @@ tflite.Node = class {
             let inputIndex = 0;
             while (inputIndex < inputs.length) {
                 let count = 1;
-                let inputName = null;
-                let inputVisible = true;
-                const inputArguments = [];
+                let name = null;
+                let visible = true;
+                const values = [];
                 if (this._type && this._type.inputs && inputIndex < this._type.inputs.length) {
                     const input = this._type.inputs[inputIndex];
-                    inputName = input.name;
+                    name = input.name;
                     if (input.list) {
                         count = inputs.length - inputIndex;
                     }
-                    if (Object.prototype.hasOwnProperty.call(input, 'visible') && !input.visible) {
-                        inputVisible = false;
+                    if (input.visible === false) {
+                        visible = false;
                     }
                 }
                 const inputArray = inputs.slice(inputIndex, inputIndex + count);
                 for (const index of inputArray) {
-                    const argument = args(index);
-                    if (argument) {
-                        inputArguments.push(argument);
+                    const value = args(index);
+                    if (value) {
+                        values.push(value);
                     }
                 }
                 inputIndex += count;
-                inputName = inputName ? inputName : inputIndex.toString();
-                this._inputs.push(new tflite.Parameter(inputName, inputVisible, inputArguments));
+                name = name ? name : inputIndex.toString();
+                const argument = new tflite.Argument(name, visible, values);
+                this._inputs.push(argument);
             }
             for (let k = 0; k < outputs.length; k++) {
                 const index = outputs[k];
                 const outputArguments = [];
-                const argument = args(index);
-                if (argument) {
-                    outputArguments.push(argument);
+                const value = args(index);
+                if (value) {
+                    outputArguments.push(value);
                 }
                 let outputName = k.toString();
                 if (this._type && this._type.outputs && k < this._type.outputs.length) {
@@ -333,7 +334,7 @@ tflite.Node = class {
                         outputName = output.name;
                     }
                 }
-                this._outputs.push(new tflite.Parameter(outputName, true, outputArguments));
+                this._outputs.push(new tflite.Argument(outputName, true, outputArguments));
             }
             if (type.custom && node.custom_options.length > 0) {
                 let decoded = false;
@@ -428,7 +429,7 @@ tflite.Attribute = class {
             this._value = tflite.Utility.enum(this._type, this._value);
         }
         if (metadata) {
-            if (Object.prototype.hasOwnProperty.call(metadata, 'visible') && !metadata.visible) {
+            if (metadata && metadata.visible == false) {
                 this._visible = false;
             } else if (Object.prototype.hasOwnProperty.call(metadata, 'default')) {
                 value = this._value;
@@ -459,12 +460,12 @@ tflite.Attribute = class {
     }
 };
 
-tflite.Parameter = class {
+tflite.Argument = class {
 
-    constructor(name, visible, args) {
+    constructor(name, visible, value) {
         this._name = name;
         this._visible = visible;
-        this._arguments = args;
+        this._value = value;
     }
 
     get name() {
@@ -475,12 +476,12 @@ tflite.Parameter = class {
         return this._visible;
     }
 
-    get arguments() {
-        return this._arguments;
+    get value() {
+        return this._value;
     }
 };
 
-tflite.Argument = class {
+tflite.Value = class {
 
     constructor(index, tensor, initializer) {
         const name = tensor.name || '';

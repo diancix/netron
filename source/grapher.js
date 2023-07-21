@@ -117,26 +117,6 @@ grapher.Graph = class {
         const edgeLabelGroup = createGroup('edge-labels');
         const nodeGroup = createGroup('nodes');
 
-        /*
-        edgePathGroup.addEventListener('pointerover', (e) => {
-            if (e.target && e.target.getAttribute('class') === 'edge-path-hit-test' && e.target.previousSibling) {
-                const path = e.target.previousSibling;
-                path.classList.add('select');
-                const newPath = path.cloneNode(true);
-                path.parentNode.replaceChild(newPath, path);
-                const element = e.target;
-                const pointerleave = (e) => {
-                    element.removeEventListener('pointerleave', pointerleave);
-                    const path = element.previousSibling;
-                    const newPath = path.cloneNode(true);
-                    newPath.classList.remove('select');
-                    path.parentNode.replaceChild(newPath, path);
-                };
-                element.addEventListener('pointerleave', pointerleave);
-            }
-        });
-        */
-
         const edgePathGroupDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         edgePathGroup.appendChild(edgePathGroupDefs);
         const marker = (id) => {
@@ -270,6 +250,15 @@ grapher.Node = class {
     update() {
         this.element.setAttribute('transform', 'translate(' + (this.x - (this.width / 2)) + ',' + (this.y - (this.height / 2)) + ')');
         this.element.style.opacity = 1;
+    }
+
+    select() {
+        this.element.classList.add('select');
+        return [ this.element ];
+    }
+
+    deselect() {
+        this.element.classList.remove('select');
     }
 
     static roundedRect(x, y, width, height, r1, r2, r3, r4) {
@@ -414,9 +403,9 @@ grapher.Node.Header.Entry = class {
             this.element.addEventListener('click', () => this.emit('click'));
         }
         if (this.tooltip) {
-            const titleElement = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            titleElement.textContent = this.tooltip;
-            this.element.appendChild(titleElement);
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = this.tooltip;
+            this.element.appendChild(title);
         }
         if (this.content) {
             this.text.textContent = this.content;
@@ -558,19 +547,17 @@ grapher.Edge = class {
         const createElement = (name) => {
             return document.createElementNS('http://www.w3.org/2000/svg', name);
         };
-        this.hitTestElement = createElement('path');
-        this.hitTestElement.setAttribute('class', 'edge-path-hit-test');
-        /* TODO */
-        edgePathGroupElement.appendChild(this.hitTestElement);
-        /* TODO */
         this.element = createElement('path');
         if (this.id) {
             this.element.setAttribute('id', this.id);
-            // TODO this.hitTestElement.setAttribute('id', this.id + '-X');
         }
         this.element.setAttribute('class', this.class ? 'edge-path ' + this.class : 'edge-path');
         edgePathGroupElement.appendChild(this.element);
-        // TODO edgePathGroupElement.appendChild(this.hitTestElement);
+        this.hitTest = createElement('path');
+        this.hitTest.setAttribute('class', 'edge-path-hit-test');
+        this.hitTest.addEventListener('pointerover', () => this.emit('pointerover'));
+        this.hitTest.addEventListener('pointerleave', () => this.emit('pointerleave'));
+        edgePathGroupElement.appendChild(this.hitTest);
         if (this.label) {
             const tspan = createElement('tspan');
             tspan.setAttribute('xml:space', 'preserve');
@@ -618,10 +605,32 @@ grapher.Edge = class {
         };
         const edgePath = curvePath(this, this.from, this.to);
         this.element.setAttribute('d', edgePath);
-        this.hitTestElement.setAttribute('d', edgePath);
+        this.hitTest.setAttribute('d', edgePath);
         if (this.labelElement) {
             this.labelElement.setAttribute('transform', 'translate(' + (this.x - (this.width / 2)) + ',' + (this.y - (this.height / 2)) + ')');
             this.labelElement.style.opacity = 1;
+        }
+    }
+
+    select() {
+        if (this.element) {
+            if (!this.element.classList.contains('select')) {
+                const path = this.element;
+                path.classList.add('select');
+                this.element = path.cloneNode(true);
+                path.parentNode.replaceChild(this.element, path);
+            }
+            return [ this.element ];
+        }
+        return [];
+    }
+
+    deselect() {
+        if (this.element && this.element.classList.contains('select')) {
+            const path = this.element;
+            path.classList.remove('select');
+            this.element = path.cloneNode(true);
+            path.parentNode.replaceChild(this.element, path);
         }
     }
 };

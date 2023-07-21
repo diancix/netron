@@ -11,8 +11,8 @@ hickle.ModelFactory = class {
         return null;
     }
 
-    async open(context, match) {
-        return new hickle.Model(match);
+    async open(context, target) {
+        return new hickle.Model(target);
     }
 };
 
@@ -101,31 +101,27 @@ hickle.Graph = class {
     }
 };
 
-hickle.Parameter = class {
+hickle.Argument = class {
 
-    constructor(name, args) {
+    constructor(name, value) {
         this._name = name;
-        this._arguments = args;
+        this._value = value;
     }
 
     get name() {
         return this._name;
     }
 
-    get visible() {
-        return true;
-    }
-
-    get arguments() {
-        return this._arguments;
+    get value() {
+        return this._value;
     }
 };
 
-hickle.Argument = class {
+hickle.Value = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new hickle.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
+            throw new hickle.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
         }
         this._name= name;
         this._type = type || null;
@@ -154,8 +150,8 @@ hickle.Node = class {
         this._type = { name: 'Weights' };
         this._name = name;
         this._inputs = parameters.map((parameter) => {
-            return new hickle.Parameter(parameter.name, [
-                new hickle.Argument(parameter.value.name, null, parameter.value)
+            return new hickle.Argument(parameter.name, [
+                new hickle.Value(parameter.value.name, null, parameter.value)
             ]);
         });
         this._outputs = [];

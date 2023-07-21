@@ -23,9 +23,9 @@ cntk.ModelFactory = class {
         return undefined;
     }
 
-    async open(context, match) {
+    async open(context, target) {
         const metadata = await context.metadata('cntk-metadata.json');
-        switch (match) {
+        switch (target) {
             case 'cntk.v1': {
                 let obj = null;
                 try {
@@ -55,7 +55,7 @@ cntk.ModelFactory = class {
                 return new cntk.Model(metadata, 2, obj);
             }
             default: {
-                throw new cntk.Error("Unsupported CNTK format '" + match + "'.");
+                throw new cntk.Error("Unsupported CNTK format '" + target + "'.");
             }
         }
     }
@@ -140,15 +140,15 @@ cntk.Graph = class {
         const args = new Map();
         const arg = (name, version, obj) => {
             if (obj && args.has(name)) {
-                throw new cntk.Error("Duplicate argument identifier '" + name + "'.");
+                throw new cntk.Error("Duplicate value '" + name + "'.");
             }
             if (!args.has(name)) {
                 switch (version) {
                     case 1:
-                        args.set(name, new cntk.Argument(version, obj ? obj : { name: name }));
+                        args.set(name, new cntk.Value(version, obj ? obj : { name: name }));
                         break;
                     case 2:
-                        args.set(name, new cntk.Argument(version, obj ? obj : { uid: name }));
+                        args.set(name, new cntk.Value(version, obj ? obj : { uid: name }));
                         break;
                     default:
                         throw new cntk.Error("Unsupported CNTK version '" + version + "'.");
@@ -162,9 +162,7 @@ cntk.Graph = class {
                     const node = obj.nodes[name];
                     switch (node.__type__) {
                         case 'InputValue':
-                            this._inputs.push(new cntk.Parameter(node.name, [
-                                new cntk.Argument(version, node)
-                            ]));
+                            this._inputs.push(new cntk.Argument(node.name, [ arg(node.name, version, node) ]));
                             break;
                         case 'LearnableParameter':
                             arg(node.name, version, node);
@@ -181,7 +179,7 @@ cntk.Graph = class {
                 }
                 if (obj.output) {
                     for (const output of obj.output) {
-                        this._outputs.push(new cntk.Parameter(output, [ arg(output, version) ]));
+                        this._outputs.push(new cntk.Argument(output, [ arg(output, version) ]));
                     }
                 }
                 break;
@@ -189,11 +187,11 @@ cntk.Graph = class {
             case 2: {
                 const map = new Map(obj.primitive_functions.map((node) => [ node.uid, node ]));
                 for (const input of obj.inputs) {
-                    const argument = arg(input.uid, version, input);
+                    const value = arg(input.uid, version, input);
                     // VariableKind { 0: 'input', 1: 'output', 2: 'parameter', 3: 'constant', 4: 'placeholder' }
                     if (input.kind == 0) {
                         const inputName = input.name || input.uid;
-                        this._inputs.push(new cntk.Parameter(inputName, [ argument ]));
+                        this._inputs.push(new cntk.Argument(inputName, [ value ]));
                     }
                 }
                 for (const block of obj.primitive_functions) {
@@ -206,8 +204,8 @@ cntk.Graph = class {
                         if (!Array.isArray(keys) || !Array.isArray(values) || keys.length !== values.length) {
                             throw new cntk.Error('Invalid block function composite arguments.');
                         }
-                        const inputs = keys.map((key) => new cntk.Parameter(key, [ arg(key, version) ]));
-                        const outputs = [ new cntk.Parameter('output', [ arg(output.uid + '_Output_0', version) ]) ];
+                        const inputs = keys.map((key) => new cntk.Argument(key, [ arg(key, version) ]));
+                        const outputs = [ new cntk.Argument('output', [ arg(output.uid + '_Output_0', version) ]) ];
                         const nodes = [];
                         while (list.length > 0) {
                             const name = list.shift();
@@ -254,27 +252,23 @@ cntk.Graph = class {
     }
 };
 
-cntk.Parameter = class {
+cntk.Argument = class {
 
-    constructor(name, args) {
+    constructor(name, value) {
         this._name = name;
-        this._arguments = args;
+        this._value = value;
     }
 
     get name() {
         return this._name;
     }
 
-    get visible() {
-        return true;
-    }
-
-    get arguments() {
-        return this._arguments;
+    get value() {
+        return this._value;
     }
 };
 
-cntk.Argument = class {
+cntk.Value = class {
 
     constructor(version, obj) {
         switch (version) {
@@ -403,13 +397,13 @@ cntk.Node = class {
                             inputArguments.push(inputArgument);
                         }
                     }
-                    this._inputs.push(new cntk.Parameter(inputSchema.name, inputArguments));
+                    this._inputs.push(new cntk.Argument(inputSchema.name, inputArguments));
                     inputIndex += inputCount;
                 }
             }
         }
         this._inputs.push(...inputs.slice(inputIndex).map((argument, index) => {
-            return new cntk.Parameter((inputIndex + index).toString(), [ argument ]);
+            return new cntk.Argument((inputIndex + index).toString(), [ argument ]);
         }));
 
         let outputIndex = 0;
@@ -417,13 +411,13 @@ cntk.Node = class {
             for (const outputSchema of this._type.outputs) {
                 if (outputIndex < outputs.length || !outputSchema.optional) {
                     const outputCount = outputSchema.type === 'Tensor[]' ? (outputs.length - outputIndex) : 1;
-                    this._outputs.push(new cntk.Parameter(outputSchema.name, outputs.slice(outputIndex, outputIndex + outputCount)));
+                    this._outputs.push(new cntk.Argument(outputSchema.name, outputs.slice(outputIndex, outputIndex + outputCount)));
                     outputIndex += outputCount;
                 }
             }
         }
         this._outputs.push(...outputs.slice(outputIndex).map((argument) => {
-            return new cntk.Parameter(outputIndex.toString(), [ argument ]);
+            return new cntk.Argument(outputIndex.toString(), [ argument ]);
         }));
     }
 
@@ -450,7 +444,7 @@ cntk.Node = class {
 
 cntk.Attribute = class {
 
-    constructor(schema, name, value) {
+    constructor(metadata, name, value) {
         this._name = name;
         this._value = value;
         this._type = null;
@@ -469,18 +463,18 @@ cntk.Attribute = class {
             }
             this._value = axis;
         }
-        if (schema) {
-            if (schema.type) {
-                this._type = schema.type;
+        if (metadata) {
+            if (metadata.type) {
+                this._type = metadata.type;
                 const type = cntk_v1[this._type] || cntk_v2[this._type];
                 if (type && type[this._value]) {
                     this._value = type[this._value];
                 }
             }
-            if (Object.prototype.hasOwnProperty.call(schema, 'visible') && !schema.visible) {
+            if (metadata.visible === false) {
                 this._visible = false;
-            } else if (Object.prototype.hasOwnProperty.call(schema, 'default')) {
-                let defaultValue = schema.default;
+            } else if (Object.prototype.hasOwnProperty.call(metadata, 'default')) {
+                let defaultValue = metadata.default;
                 value = this._value;
                 if (typeof value == 'function') {
                     value = value();
