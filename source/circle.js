@@ -18,12 +18,12 @@ circle.ModelFactory = class {
         return undefined;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         await context.require('./circle-schema');
         circle.schema = flatbuffers.get('circle').circle;
         let model = null;
         const attachments = new Map();
-        switch (target) {
+        switch (match) {
             case 'circle.flatbuffers.json': {
                 try {
                     const obj = context.open('json');
@@ -57,7 +57,7 @@ circle.ModelFactory = class {
                 break;
             }
             default: {
-                throw new circle.Error("Unsupported Circle format '" + target + "'.");
+                throw new circle.Error("Unsupported Circle format '" + match + "'.");
             }
         }
         const metadata = await context.metadata('circle-metadata.json');
@@ -185,9 +185,9 @@ circle.Graph = class {
                     const is_variable = tensor.is_variable;
                     const data = buffer ? buffer.data : null;
                     const initializer = (data && data.length > 0) || is_variable ? new circle.Tensor(index, tensor, buffer, is_variable) : null;
-                    tensors.set(index, new circle.Value(index, tensor, initializer));
+                    tensors.set(index, new circle.Argument(index, tensor, initializer));
                 } else {
-                    tensors.set(index, new circle.Value(index, { name: '' }, null));
+                    tensors.set(index, new circle.Argument(index, { name: '' }, null));
                 }
             }
             return tensors.get(index);
@@ -232,20 +232,20 @@ circle.Graph = class {
         const inputs = subgraph.inputs;
         for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
-            const value = args(input);
+            const argument = args(input);
             if (subgraphMetadata && i < subgraphMetadata.input_tensor_metadata.length) {
-                applyTensorMetadata(value, subgraphMetadata.input_tensor_metadata[i]);
+                applyTensorMetadata(argument, subgraphMetadata.input_tensor_metadata[i]);
             }
-            this._inputs.push(new circle.Argument(value ? value.name : '?', true, value ? [ value ] : []));
+            this._inputs.push(new circle.Parameter(argument ? argument.name : '?', true, argument ? [ argument ] : []));
         }
         const outputs = subgraph.outputs;
         for (let i = 0; i < outputs.length; i++) {
             const output = outputs[i];
-            const value = args(output);
+            const argument = args(output);
             if (subgraphMetadata && i < subgraphMetadata.output_tensor_metadata.length) {
-                applyTensorMetadata(value, subgraphMetadata.output_tensor_metadata[i]);
+                applyTensorMetadata(argument, subgraphMetadata.output_tensor_metadata[i]);
             }
-            this._outputs.push(new circle.Argument(value ? value.name : '?', true, value ? [ value ] : []));
+            this._outputs.push(new circle.Parameter(argument ? argument.name : '?', true, argument ? [ argument ] : []));
         }
     }
 
@@ -291,27 +291,27 @@ circle.Node = class {
                     if (input.option == 'variadic') {
                         count = inputs.length - inputIndex;
                     }
-                    if (input && input.visible === false) {
+                    if (Object.prototype.hasOwnProperty.call(input, 'visible') && !input.visible) {
                         inputVisible = false;
                     }
                 }
                 const inputArray = inputs.slice(inputIndex, inputIndex + count);
                 for (const index of inputArray) {
-                    const value = args(index);
-                    if (value) {
-                        inputArguments.push(value);
+                    const argument = args(index);
+                    if (argument) {
+                        inputArguments.push(argument);
                     }
                 }
                 inputIndex += count;
                 inputName = inputName ? inputName : inputIndex.toString();
-                this._inputs.push(new circle.Argument(inputName, inputVisible, inputArguments));
+                this._inputs.push(new circle.Parameter(inputName, inputVisible, inputArguments));
             }
             for (let k = 0; k < outputs.length; k++) {
                 const index = outputs[k];
                 const outputArguments = [];
-                const value = args(index);
-                if (value) {
-                    outputArguments.push(value);
+                const argument = args(index);
+                if (argument) {
+                    outputArguments.push(argument);
                 }
                 let outputName = k.toString();
                 if (this._type && this._type.outputs && k < this._type.outputs.length) {
@@ -320,7 +320,7 @@ circle.Node = class {
                         outputName = output.name;
                     }
                 }
-                this._outputs.push(new circle.Argument(outputName, true, outputArguments));
+                this._outputs.push(new circle.Parameter(outputName, true, outputArguments));
             }
             if (type.custom && node.custom_options.length > 0) {
                 let decoded = false;
@@ -415,7 +415,7 @@ circle.Attribute = class {
             this._value = circle.Utility.enum(this._type, this._value);
         }
         if (metadata) {
-            if (metadata.visible === false) {
+            if (Object.prototype.hasOwnProperty.call(metadata, 'visible') && !metadata.visible) {
                 this._visible = false;
             } else if (Object.prototype.hasOwnProperty.call(metadata, 'default')) {
                 value = this._value;
@@ -446,12 +446,12 @@ circle.Attribute = class {
     }
 };
 
-circle.Argument = class {
+circle.Parameter = class {
 
-    constructor(name, visible, value) {
+    constructor(name, visible, args) {
         this._name = name;
         this._visible = visible;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
@@ -462,12 +462,12 @@ circle.Argument = class {
         return this._visible;
     }
 
-    get value() {
-        return this._value;
+    get arguments() {
+        return this._arguments;
     }
 };
 
-circle.Value = class {
+circle.Argument = class {
 
     constructor(index, tensor, initializer) {
         const name = tensor.name || '';

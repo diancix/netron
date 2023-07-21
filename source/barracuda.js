@@ -19,16 +19,16 @@ barracuda.ModelFactory = class {
 
     async open(context) {
         const metadata = barracuda.Metadata.open();
-        const model = new barracuda.NNModel(context.stream.peek());
-        return new barracuda.Model(metadata, model);
+        const nn = new barracuda.NNModel(context.stream.peek());
+        return new barracuda.Model(metadata, nn);
     }
 };
 
 barracuda.Model = class {
 
-    constructor(metadata, model) {
-        this._version = model.version.toString();
-        this._graphs = [ new barracuda.Graph(metadata, model) ];
+    constructor(metadata, nn) {
+        this._version = nn.version.toString();
+        this._graphs = [ new barracuda.Graph(metadata, nn) ];
     }
 
     get format() {
@@ -42,42 +42,34 @@ barracuda.Model = class {
 
 barracuda.Graph = class {
 
-    constructor(metadata, model) {
+    constructor(metadata, nn) {
         this._inputs = [];
         this._outputs = [];
         this._nodes = [];
-        const args = new Map();
-        const arg = (name, type, tensor) => {
-            if (!args.has(name)) {
-                type = tensor ? tensor.type : type;
-                args.set(name, new barracuda.Value(name, type, tensor));
-            } else if (type || tensor) {
-                throw new barracuda.Error("Duplicate value '" + name + "'.");
-            }
-            return args.get(name);
-        };
+        for (const input of nn.inputs) {
+            this._inputs.push(new barracuda.Parameter(input.name, [
+                new barracuda.Argument(input.name, new barracuda.TensorType(4, new barracuda.TensorShape(input.shape)))
+            ]));
+        }
+        for (const output of nn.outputs) {
+            this._outputs.push(new barracuda.Parameter(output, [
+                new barracuda.Argument(output)
+            ]));
+        }
         const layers = [];
-        for (const layer of model.layers) {
+        const initializers = new Map();
+        for (const layer of nn.layers) {
             if (layer.type !== 255 || layer.inputs.length > 0) {
                 layers.push(layer);
             } else {
                 for (const tensor of layer.tensors) {
-                    arg(tensor.name, null, new barracuda.Tensor(tensor));
+                    initializers.set(tensor.name, new barracuda.Tensor(tensor));
                 }
             }
         }
-        for (const input of model.inputs) {
-            this._inputs.push(new barracuda.Argument(input.name, [
-                arg(input.name, new barracuda.TensorType(4, new barracuda.TensorShape(input.shape)))
-            ]));
-        }
-        for (const output of model.outputs) {
-            this._outputs.push(new barracuda.Argument(output, [
-                arg(output)
-            ]));
-        }
+
         for (const layer of layers) {
-            this._nodes.push(new barracuda.Node(metadata, layer, null, arg));
+            this._nodes.push(new barracuda.Node(metadata, layer, null, initializers));
         }
     }
 
@@ -98,22 +90,27 @@ barracuda.Graph = class {
     }
 };
 
-barracuda.Argument = class {
+barracuda.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
-    get value() {
-        return this._value;
+
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-barracuda.Value = class {
+barracuda.Argument = class {
 
     constructor(name, type, initializer) {
         this._name = name;
@@ -137,7 +134,7 @@ barracuda.Value = class {
 
 barracuda.Node = class {
 
-    constructor(metadata, layer, type, arg) {
+    constructor(metadata, layer, type, initializers) {
         this._name = layer.name || '';
         this._type = type ? type : metadata.type(layer.type);
         this._inputs = [];
@@ -145,33 +142,39 @@ barracuda.Node = class {
         this._attributes = [];
         const inputs = Array.prototype.slice.call(this._type.inputs || [ 'input' ]);
         if (this._type.inputs && this._type.inputs.length === 1 && this._type.inputs[0].name === 'inputs') {
-            this._inputs.push(new barracuda.Argument('inputs', layer.inputs.map((input) => arg(input))));
+            this._inputs.push(new barracuda.Parameter('inputs', layer.inputs.map((input) => {
+                const initializer = initializers.has(input) ? initializers.get(input) : null;
+                return new barracuda.Argument(input, initializer ? initializer.type : null, initializer);
+            })));
         } else if (layer.inputs) {
             for (let i = 0; i < layer.inputs.length; i++) {
                 const input = layer.inputs[i];
-                const name = inputs.length > 0 ? inputs.shift().name : i.toString();
-                const argument = new barracuda.Argument(name, [ arg(input) ]);
-                this._inputs.push(argument);
+                const initializer = initializers.has(input) ? initializers.get(input) : null;
+                this._inputs.push(new barracuda.Parameter(inputs.length > 0 ? inputs.shift().name : i.toString(), [
+                    new barracuda.Argument(input, initializer ? initializer.type : null, initializer)
+                ]));
             }
         }
         if (layer.tensors) {
             for (let i = 0; i < layer.tensors.length; i++) {
                 const tensor = layer.tensors[i];
                 const initializer = new barracuda.Tensor(tensor);
-                this._inputs.push(new barracuda.Argument(inputs.length > 0 ? inputs.shift().name : i.toString(), [
-                    arg(tensor.name, initializer.type, initializer)
+                this._inputs.push(new barracuda.Parameter(inputs.length > 0 ? inputs.shift().name : i.toString(), [
+                    new barracuda.Argument(tensor.name, initializer.type, initializer)
                 ]));
             }
         }
         if (layer.inputs !== undefined) {
-            this._outputs.push(new barracuda.Argument('output', [ arg(this._name) ]));
+            this._outputs.push(new barracuda.Parameter('output', [
+                new barracuda.Argument(this._name)
+            ]));
         }
         if (layer.activation !== undefined && (layer.type === 50 || layer.activation !== 0)) {
             const type = barracuda.Activation[layer.activation];
             if (!type) {
                 throw new barracuda.Error("Unsupported activation '" + layer.activation + "'.");
             }
-            this._chain = [ new barracuda.Node(metadata, {}, { name: type, category: 'Activation' }, arg) ];
+            this._chain = [ new barracuda.Node(metadata, {}, { name: type, category: 'Activation' }, initializers) ];
         }
         const attribute = (name, type, value, defaultValue) => {
             if (value === undefined) {
@@ -240,6 +243,10 @@ barracuda.Attribute = class {
     get value() {
         return this._value;
     }
+
+    get visible() {
+        return true;
+    }
 };
 
 barracuda.Tensor = class {
@@ -299,10 +306,13 @@ barracuda.TensorShape = class {
 barracuda.NNModel = class {
 
     constructor(buffer) {
+
         // https://github.com/Unity-Technologies/barracuda-release/blob/release/1.3.2/Barracuda/Runtime/Core/Model.cs
+
         const reader = new barracuda.BinaryReader(buffer);
         this._version = reader.int32();
         reader.int32();
+
         this._inputs = new Array(reader.int32());
         for (let i = 0; i < this._inputs.length; i++) {
             this._inputs[i] = {
@@ -311,6 +321,7 @@ barracuda.NNModel = class {
             };
         }
         this._outputs = reader.strings();
+
         this._memories = new Array(reader.int32());
         for (let i = 0; i < this._memories.length; i++) {
             this._memories[i] = {
@@ -319,6 +330,7 @@ barracuda.NNModel = class {
                 out: reader.string()
             };
         }
+
         this._layers = new Array(reader.int32());
         for (let i = 0; i < this._layers.length; i++) {
             const layer = {};

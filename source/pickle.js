@@ -22,9 +22,9 @@ pickle.ModelFactory = class {
         return null;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         let format = 'Pickle';
-        const obj = target;
+        const obj = match;
         if (obj === null || obj === undefined) {
             context.exception(new pickle.Error("Unsupported Pickle null object in '" + context.identifier + "'."));
         } else if (Array.isArray(obj)) {
@@ -78,7 +78,7 @@ pickle.Graph = class {
             for (const item of obj) {
                 this._nodes.push(new pickle.Node(item));
             }
-        } else if (obj && obj instanceof Map && !Array.from(obj.values()).some((value) => typeof value === 'string' || typeof value === 'number')) {
+        } else if (obj && obj instanceof Map) {
             for (const entry of obj) {
                 this._nodes.push(new pickle.Node(entry[1], entry[0]));
             }
@@ -115,8 +115,7 @@ pickle.Node = class {
         } else {
             const type = obj.__class__ ? obj.__class__.__module__ + '.' + obj.__class__.__name__ : 'Object';
             this._type = { name: type };
-            const entries = obj instanceof Map ? Array.from(obj.entries()) : Object.entries(obj);
-            for (const entry of entries) {
+            for (const entry of Object.entries(obj)) {
                 const name = entry[0];
                 const value = entry[1];
                 this._attributes.push(new pickle.Attribute(name, value));

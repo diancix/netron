@@ -13,9 +13,9 @@ onednn.ModelFactory = class {
         return null;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         const metadata = await context.metadata('onednn-metadata.json');
-        return new onednn.Model(metadata, target);
+        return new onednn.Model(metadata, match);
     }
 };
 
@@ -52,57 +52,50 @@ onednn.Graph = class {
         this._nodes = [];
         this._inputs = [];
         this._outputs = [];
-        const nodes = [];
-        const tensors = new Set();
+        const initializers = [];
         for (const node of symbol.graph) {
             if (node.kind == 'Wildcard' && node.inputs.length == 0) {
                 for (const output of node.outputs) {
-                    tensors.add(output.id);
+                    initializers.push(output.id);
                 }
-            } else {
-                nodes.push(node);
             }
         }
-        const values = new Map();
-        const value = (obj) => {
-            const id = obj.id;
-            const shape = !obj.shape || (obj.shape.length === 1 && obj.shape[0] === -1) ? null : new onednn.TensorShape(obj.shape);
-            const type = new onednn.TensorType(obj.dtype, shape);
-            const tensor = tensors.has(id) ? new onednn.Tensor(type, obj.property_type) : null;
-            if (!values.has(id)) {
-                values.set(id, new onednn.Value(id.toString(), type, tensor));
-            } else if ((type && !type.equals(values.get(id).type)) || (tensor && !tensor.equals(values.get(id).initializer))) {
-                throw new onednn.Error("Duplicate value '" + id.toString() + "'.");
+        for (const node of symbol.graph) {
+            if (!(node.kind == 'Wildcard' && node.inputs.length == 0)) {
+                this._nodes.push(new onednn.Node(this._metadata, node, symbol.engine_kind, initializers));
             }
-            return values.get(id);
-        };
-        for (const node of nodes) {
+        }
+
+        const values = [];
+        for (const node of symbol.graph) {
             for (const input of node.inputs) {
-                value(input);
+                values.push(input);
             }
             for (const output of node.outputs) {
-                value(output);
+                values.push(output);
             }
         }
-        const engine = symbol.engine_kind;
-        for (const node of nodes) {
-            this._nodes.push(new onednn.Node(this._metadata, node, engine, value, tensors));
-        }
+        let inputIndex = 0;
         const inputs = symbol.input_ports || [];
-        for (let i = 0; i < inputs.length; i++) {
-            const id = inputs[i];
-            const value = values.get(id);
-            if (value) {
-                this._inputs.push(new onednn.Argument(id.toString(), [ value ]));
-            }
+        for (const input_id of inputs) {
+            const input = values.find((value) => value.id == input_id);
+            const shape = !input.shape || (input.shape.length === 1 && input.shape[0] === -1) ? null : new onednn.TensorShape(input.shape);
+            const type = new onednn.TensorType(input.dtype, shape);
+            const inputName = (inputs.length == 1) ? 'input' : ('input' + (inputIndex)).toString();
+            this._inputs.push(new onednn.Parameter(inputName, [
+                new onednn.Argument(input.id.toString(), type, initializers.includes(input.id) ? new onednn.Tensor(type, input.property_type) : null)
+            ]));
+            inputIndex += 1;
         }
+        let outputIndex = 0;
         const outputs = symbol.output_ports || [];
-        for (let i = 0; i < outputs.length; i++) {
-            const id = outputs[i];
-            const value = values.get(id);
-            if (value) {
-                this._outputs.push(new onednn.Argument(id.toString(), [ value ]));
-            }
+        for (const output_id of outputs) {
+            const output = values.find((value) => value.id == output_id);
+            const shape = !output.shape || (output.shape.length === 1 && output.shape[0] === -1) ? null : new onednn.TensorShape(output.shape);
+            const type = new onednn.TensorType(output.dtype, shape);
+            const outputName = (outputs.length == 1) ? 'output' : ('output' + (outputIndex)).toString();
+            this._outputs.push(new onednn.Parameter(outputName, [new onednn.Argument(output.id.toString(), type)]));
+            outputIndex += 1;
         }
     }
 
@@ -129,7 +122,7 @@ onednn.Graph = class {
 
 onednn.Node = class {
 
-    constructor(metadata, node, device, value) {
+    constructor(metadata, node, device, initializers) {
         this._name = node.name;
         this._attributes = [];
         this._inputs = [];
@@ -146,20 +139,30 @@ onednn.Node = class {
             }
         }
         const inputs = node.inputs || [];
-        for (let i = 0; i < inputs.length; i++) {
-            let name = inputs.length === 1 ? 'input' : i.toString();
+        let inputIndex = 0;
+        for (const input of inputs) {
+            const shape = !input.shape || (input.shape.length === 1 && input.shape[0] === -1) ? null : new onednn.TensorShape(input.shape);
+            const type = new onednn.TensorType(input.dtype, shape);
+            let inputName = (inputs.length == 1) ? 'input' : ('input' + (inputIndex)).toString();
             if (this._type && this._type.inputs && this._type.inputs.length > 0) {
-                name = this._type.inputs[i].name;
+                inputName = this._type.inputs[inputIndex].name;
             }
-            this._inputs.push(new onednn.Argument(name, [ value(inputs[i]) ]));
+            this._inputs.push(new onednn.Parameter(inputName, [
+                new onednn.Argument(input.id.toString(), type, initializers.includes(input.id) ? new onednn.Tensor(type, input.property_type) : null)
+            ]));
+            inputIndex += 1;
         }
         const outputs = node.outputs || [];
-        for (let i = 0; i < outputs.length; i++) {
-            let name = outputs.length === 1 ? 'output' : i.toString();
+        let outputIndex = 0;
+        for (const output of outputs) {
+            const shape = !output.shape || (output.shape.length === 1 && output.shape[0] === -1) ? null : new onednn.TensorShape(output.shape);
+            const type = new onednn.TensorType(output.dtype, shape);
+            let outputName = (outputs.length == 1) ? 'output' : ('output' + (outputIndex)).toString();
             if (this._type && this._type.outputs && this._type.outputs.length > 0) {
-                name = this._type.outputs[i].name;
+                outputName = this._type.outputs[outputIndex].name;
             }
-            this._outputs.push(new onednn.Argument(name, [ value(outputs[i]) ]));
+            this._outputs.push(new onednn.Parameter(outputName, [new onednn.Argument(output.id.toString(), type)]));
+            outputIndex += 1;
         }
     }
 
@@ -283,27 +286,31 @@ onednn.Attribute = class {
     }
 };
 
-onednn.Argument = class {
+onednn.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-onednn.Value = class {
+onednn.Argument = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new onednn.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new onednn.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._type = type || null;
@@ -348,11 +355,6 @@ onednn.TensorType = class {
         return this._shape;
     }
 
-    equals(obj) {
-        return obj && this._dataType === obj.dataType &&
-            ((this._shape && this._shape.equals(obj.shape)) || (this._shape === null && obj.shape === null));
-    }
-
     toString() {
         return this._dataType + (this._shape ? this._shape.toString() : '[?]');
     }
@@ -366,12 +368,6 @@ onednn.TensorShape = class {
 
     get dimensions() {
         return this._dimensions;
-    }
-
-    equals(obj) {
-        return obj && Array.isArray(obj.dimensions) &&
-            Array.isArray(this._dimensions) && this._dimensions.length === obj.dimensions.length
-            && obj.dimensions.every((value, index) => this._dimensions[index] === value);
     }
 
     toString() {
@@ -392,10 +388,6 @@ onednn.Tensor = class {
 
     get category() {
         return this._category;
-    }
-
-    equals(obj) {
-        return obj && this._type.equals(obj.type) && this.category === obj.category;
     }
 };
 

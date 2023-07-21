@@ -25,8 +25,8 @@ nnef.ModelFactory = class {
         return null;
     }
 
-    async open(context, target) {
-        switch (target) {
+    open(context, match) {
+        switch (match) {
             case 'nnef.graph': {
                 const stream = context.stream;
                 const reader = nnef.TextReader.open(stream);
@@ -36,7 +36,7 @@ nnef.ModelFactory = class {
                 throw new nnef.Error('NNEF dat format support not implemented.');
             }
             default: {
-                throw new nnef.Error("Unsupported NNEF format '" + target + "'.");
+                throw new nnef.Error("Unsupported NNEF format '" + match + "'.");
             }
         }
     }

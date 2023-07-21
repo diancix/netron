@@ -45,14 +45,14 @@ caffe2.ModelFactory = class {
         return undefined;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         await context.require('./caffe2-proto');
         const metadata = await context.metadata('caffe2-metadata.json');
         const identifier = context.identifier;
         const parts = identifier.split('.');
         const extension = parts.pop().toLowerCase();
         const base = parts.join('.');
-        switch (target) {
+        switch (match) {
             case 'caffe2.pbtxt': {
                 const openText = (predictBuffer, initBuffer, initTextFormat) => {
                     let predict_net = null;
@@ -179,7 +179,7 @@ caffe2.ModelFactory = class {
                 }
             }
             default: {
-                throw new caffe2.Error("Unsupported Caffe2 format '" + target + "'.");
+                throw new caffe2.Error("Unsupported Caffe2 format '" + match + "'.");
             }
         }
     }
@@ -212,45 +212,68 @@ caffe2.Graph = class {
         this._name = netDef.name || '';
         this._type = netDef.type || '';
         this._nodes = [];
-        const initializers = new Set();
-        const tensors = new Map();
-        for (const name of netDef.external_input) {
-            tensors.set(name, new caffe2.Tensor(name, {}));
+
+        const inputs = new Map();
+        for (const input of netDef.external_input) {
+            inputs.set(input, {});
         }
         if (init) {
-            const dataTypes = new Map([
-                [ 'GivenTensorFill', 'float32' ],
-                [ 'GivenTensorDoubleFill', 'float64' ],
-                [ 'GivenTensorBoolFill', 'boolean' ],
-                [ 'GivenTensorByteStringToUInt8Fill', 'uint8' ],
-                [ 'GivenTensorInt16Fill', 'int16' ],
-                [ 'GivenTensorSInt16Fill', 'int16' ],
-                [ 'GivenTensorIntFill', 'int32' ],
-                [ 'GivenTensorInt64Fill', 'int64' ],
-                [ 'GivenTensorStringFill', 'string' ],
-                [ 'Int8GivenIntTensorFill', 'int32' ],
-                [ 'Int8GivenTensorFill', 'int8' ],
-                [ 'XavierFill', null ],
-                [ 'ConstantFill', null ]
-            ]);
             for (const op of init.op) {
                 if (op.output && op.output.length == 1) {
                     const name = op.output[0];
-                    const tensor = {};
+                    if (!inputs.has(name)) {
+                        inputs.set(name, {});
+                    }
+                    const initializer = inputs.get(name);
                     for (const arg of op.arg) {
-                        tensor[arg.name] = arg;
+                        initializer[arg.name] = arg;
                     }
-                    if (!dataTypes.has(op.type)) {
-                        throw new caffe2.Error("Unsupported init op '" + op.type + "'.");
+                    switch (op.type) {
+                        case 'GivenTensorFill':
+                            initializer.dataType = 'float32';
+                            break;
+                        case 'GivenTensorDoubleFill':
+                            initializer.dataType = 'float64';
+                            break;
+                        case 'GivenTensorBoolFill':
+                            initializer.dataType = 'boolean';
+                            break;
+                        case 'GivenTensorByteStringToUInt8Fill':
+                            initializer.dataType = 'uint8';
+                            break;
+                        case 'GivenTensorInt16Fill':
+                        case 'GivenTensorSInt16Fill':
+                            initializer.dataType = 'int16';
+                            break;
+                        case 'GivenTensorIntFill':
+                            initializer.dataType = 'int32';
+                            break;
+                        case 'GivenTensorInt64Fill':
+                            initializer.dataType = 'int64';
+                            break;
+                        case 'GivenTensorStringFill':
+                            initializer.dataType = 'string';
+                            break;
+                        case 'Int8GivenIntTensorFill':
+                            initializer.dataType = 'int32';
+                            break;
+                        case 'Int8GivenTensorFill':
+                            initializer.dataType = 'int8';
+                            break;
+                        case 'XavierFill':
+                            break;
+                        case 'ConstantFill':
+                            break;
+                        default:
+                            throw new caffe2.Error("Unsupported init op '" + op.type + "'.");
                     }
-                    tensor.dataType = dataTypes.get(op.type);
-                    if (tensor.values && tensor.values.floats && (tensor.values.floats.length !== 1 || tensor.values.floats[0] !== 0)) {
-                        initializers.add(name);
+                    if (initializer.values && initializer.values.floats && (initializer.values.floats.length !== 1 || initializer.values.floats[0] !== 0)) {
+                        initializer.input = false;
                     }
-                    tensors.set(name, new caffe2.Tensor(name, tensor));
                 }
             }
         }
+
         const scope = {};
         let index = 0;
         for (const op of netDef.op) {
@@ -266,38 +289,11 @@ caffe2.Graph = class {
             });
             index++;
         }
-        const args = new Map();
-        const arg = (name, type, tensor) => {
-            if (!args.has(name)) {
-                args.set(name, new caffe2.Value(name, type || null, tensor || null));
-            } else if (type || tensor) {
-                throw new caffe2.Value("Duplicate value '" + name + "'.");
-            }
-            return args.get(name);
-        };
-        for (const op of netDef.op) {
-            let index = 0;
-            for (const name of op.input) {
-                if (index > 0 && tensors.has(name)) {
-                    if (!args.has(name)) {
-                        args.set(name, new caffe2.Value(name, null, tensors.get(name)));
-                    }
-                    initializers.add(name);
-                }
-                index++;
-            }
-        }
-        for (const op of netDef.op) {
-            for (const name of op.output) {
-                if (tensors.has(name)) {
-                    initializers.add(name);
-                }
-            }
-        }
+
         let lastNode = null;
         let lastOutput = null;
         for (const op of netDef.op) {
-            const node = new caffe2.Node(metadata, op, arg);
+            const node = new caffe2.Node(metadata, op, inputs);
             if (op.input.length == 1 &&
                 op.output.length >= 1 &&
                 op.input[0].split('\n').shift() == op.output[0].split('\n').shift() &&
@@ -314,16 +310,21 @@ caffe2.Graph = class {
                 }
             }
         }
+
         this._inputs = [];
         for (const input of netDef.external_input) {
-            if (netDef.external_input.length > 1 && initializers.has(input)) {
-                continue;
+            if (netDef.external_input.length > 1) {
+                const initializer = inputs.get(input);
+                if (initializer && initializer.input === false) {
+                    continue;
+                }
             }
-            this._inputs.push(new caffe2.Argument(input, [ arg(input) ]));
+            this._inputs.push(new caffe2.Parameter(input, [ new caffe2.Argument(input, null, null) ]));
         }
+
         this._outputs = [];
         for (const output of netDef.external_output) {
-            this._outputs.push(new caffe2.Argument(output, [ arg(output) ]));
+            this._outputs.push(new caffe2.Parameter(output, [ new caffe2.Argument(output, null, null) ]));
         }
     }
 
@@ -346,29 +347,37 @@ caffe2.Graph = class {
     get nodes() {
         return this._nodes;
     }
+
+    toString() {
+        return 'graph(' + this.name + ')';
+    }
 };
 
-caffe2.Argument = class {
+caffe2.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-caffe2.Value = class {
+caffe2.Argument = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new caffe2.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new caffe2.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._type = type || null;
@@ -400,7 +409,7 @@ caffe2.Value = class {
 
 caffe2.Node = class {
 
-    constructor(metadata, op, arg) {
+    constructor(metadata, op, initializers) {
         this._name = op.name || '';
         this._device = op.engine || '';
         this._metadata = metadata;
@@ -409,21 +418,41 @@ caffe2.Node = class {
         this._attributes = op.arg.map((arg) => new caffe2.Attribute(metadata, this._type.name, arg));
         const inputs = op.input;
         const outputs = op.output;
+        const tensors = {};
+        let index = 0;
+        for (const input of inputs) {
+            if (index > 0 && initializers.has(input)) {
+                const initializer = initializers.get(input);
+                tensors[input] = new caffe2.Tensor(input, initializer);
+                initializer.input = false;
+            }
+            index++;
+        }
+        for (const output of outputs) {
+            if (initializers.has(output)) {
+                const initializer = initializers.get(output);
+                initializer.input = false;
+            }
+        }
         this._inputs = [];
         let inputIndex = 0;
         if (this._type && this._type.inputs) {
             for (const inputDef of this._type.inputs) {
                 if (inputIndex < inputs.length || inputDef.option != 'optional') {
                     const inputCount = (inputDef.option == 'variadic') ? (inputs.length - inputIndex) : 1;
-                    const inputArguments = inputs.slice(inputIndex, inputIndex + inputCount).filter((id) => id != '' || inputDef.option != 'optional').map((id) => arg(id));
-                    this._inputs.push(new caffe2.Argument(inputDef.name, inputArguments));
+                    const inputArguments = inputs.slice(inputIndex, inputIndex + inputCount).filter((id) => id != '' || inputDef.option != 'optional').map((id) => {
+                        return new caffe2.Argument(id, null, tensors[id]);
+                    });
+                    this._inputs.push(new caffe2.Parameter(inputDef.name, inputArguments));
                     inputIndex += inputCount;
                 }
             }
         } else {
             this._inputs.push(...inputs.slice(inputIndex).map((input, index) => {
                 const inputName = ((inputIndex + index) == 0) ? 'input' : (inputIndex + index).toString();
-                return new caffe2.Argument(inputName, [ arg(input) ]);
+                return new caffe2.Parameter(inputName, [
+                    new caffe2.Argument(input, null, tensors[input])
+                ]);
             }));
         }
         this._outputs = [];
@@ -432,15 +461,17 @@ caffe2.Node = class {
             for (const outputDef of this._type.outputs) {
                 if (outputIndex < outputs.length || outputDef.option != 'optional') {
                     const outputCount = (outputDef.option == 'variadic') ? (outputs.length - outputIndex) : 1;
-                    const outputArguments = outputs.slice(outputIndex, outputIndex + outputCount).map((id) => arg(id));
-                    this._outputs.push(new caffe2.Argument(outputDef.name, outputArguments));
+                    const outputArguments = outputs.slice(outputIndex, outputIndex + outputCount).map((id) => new caffe2.Argument(id));
+                    this._outputs.push(new caffe2.Parameter(outputDef.name, outputArguments));
                     outputIndex += outputCount;
                 }
             }
         } else {
             this._outputs.push(...outputs.slice(outputIndex).map((output, index) => {
                 const outputName = ((outputIndex + index) == 0) ? 'output' : (outputIndex + index).toString();
-                return new caffe2.Argument(outputName, [ arg(output) ]);
+                return new caffe2.Parameter(outputName, [
+                    new caffe2.Argument(output, null, null)
+                ]);
             }));
         }
     }
@@ -504,7 +535,7 @@ caffe2.Attribute = class {
         }
 
         if (metadata) {
-            if (metadata.visible === false) {
+            if (Object.prototype.hasOwnProperty.call(metadata, 'visible') && !metadata.visible) {
                 this._visible = false;
             } else if (metadata.default !== undefined) {
                 if (this._value == metadata.default || (this._value && this._value.toString() == metadata.default.toString())) {

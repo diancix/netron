@@ -1,6 +1,6 @@
 
 const protoc = {};
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 
 protoc.Object = class {
@@ -136,7 +136,7 @@ protoc.Namespace = class extends protoc.Object {
 
 protoc.Root = class extends protoc.Namespace {
 
-    constructor(alias) {
+    constructor(alias, paths, files) {
         super(null, '');
         this.alias = alias;
         this._files = new Set();
@@ -149,17 +149,14 @@ protoc.Root = class extends protoc.Namespace {
         this._library.set('google/protobuf/wrappers.proto', () => {
             new protoc.Field(this.defineType('google.protobuf.BoolValue'), 'value', 1, 'bool');
         });
+        this.load(paths, files);
     }
 
-    async load(paths, files) {
+    load(paths, files) {
         for (const file of files) {
-            /* eslint-disable no-await-in-loop */
-            const resolved = await this._resolve(file, '', paths);
-            /* eslint-enable no-await-in-loop */
+            const resolved = this._resolve(file, '', paths);
             if (resolved) {
-                /* eslint-disable no-await-in-loop */
-                await this._loadFile(paths, resolved);
-                /* eslint-enable no-await-in-loop */
+                this._loadFile(paths, resolved);
             } else {
                 throw new protoc.Error("File '" + file + "' not found.");
             }
@@ -167,12 +164,12 @@ protoc.Root = class extends protoc.Namespace {
         return this;
     }
 
-    async _loadFile(paths, file, weak) {
+    _loadFile(paths, file, weak) {
         if (!this._files.has(file)) {
             this._files.add(file);
             if (!this._library.has(file)) {
                 try {
-                    await this._parseFile(paths, file);
+                    this._parseFile(paths, file);
                 } catch (err) {
                     if (!weak) {
                         throw err;
@@ -185,34 +182,26 @@ protoc.Root = class extends protoc.Namespace {
         }
     }
 
-    async _parseFile(paths, file) {
-        const source = await fs.readFile(file, 'utf-8');
+    _parseFile(paths, file) {
+        const source = fs.readFileSync(file, 'utf-8');
         const parser = new protoc.Parser(source, file, this);
         const parsed = parser.parse();
         for (const item of parsed.imports) {
-            /* eslint-disable no-await-in-loop */
-            const resolved = await this._resolve(item, file, paths);
-            /* eslint-enable no-await-in-loop */
+            const resolved = this._resolve(item, file, paths);
             if (!resolved) {
                 throw new protoc.Error("File '" + item + "' not found.");
             }
-            /* eslint-disable no-await-in-loop */
-            await this._loadFile(paths, resolved);
-            /* eslint-enable no-await-in-loop */
+            this._loadFile(paths, resolved);
         }
         for (const item of parsed.weakImports) {
-            /* eslint-disable no-await-in-loop */
-            const resolved = await this._resolve(item, file, paths);
-            /* eslint-enable no-await-in-loop */
+            const resolved = this._resolve(item, file, paths);
             if (resolved) {
-                /* eslint-disable no-await-in-loop */
-                await this._loadFile(paths, resolved);
-                /* eslint-enable no-await-in-loop */
+                this._loadFile(paths, resolved);
             }
         }
     }
 
-    async _resolve(target, source, paths) {
+    _resolve(target, source, paths) {
         const file = path.resolve(source, target);
         const posix = file.split(path.sep).join(path.posix.sep);
         const index = posix.lastIndexOf('google/protobuf/');
@@ -222,24 +211,14 @@ protoc.Root = class extends protoc.Namespace {
                 return name;
             }
         }
-        const exists = async (path) => {
-            try {
-                await fs.access(path);
-                return true;
-            } catch (error) {
-                return false;
-            }
-        };
-        if (await exists(file)) {
+        if (fs.existsSync(file)) {
             return file;
         }
         for (const dir of paths) {
             const file = path.resolve(dir, target);
-            /* eslint-disable no-await-in-loop */
-            if (await exists(file)) {
+            if (fs.existsSync(file)) {
                 return file;
             }
-            /* eslint-enable no-await-in-loop */
         }
         return null;
     }
@@ -1451,7 +1430,7 @@ protoc.Error = class extends Error {
     }
 };
 
-const main = async (args) => {
+const main = (args) => {
 
     const options = { verbose: false, root: 'default', out: '', text: false, paths: [], files: [] };
     while (args.length > 0) {
@@ -1482,11 +1461,10 @@ const main = async (args) => {
     }
 
     try {
-        const root = new protoc.Root(options.root);
-        await root.load(options.paths, options.files);
+        const root = new protoc.Root(options.root, options.paths, options.files);
         const generator = new protoc.Generator(root, options.text);
         if (options.out) {
-            await fs.writeFile(options.out, generator.content, 'utf-8');
+            fs.writeFileSync(options.out, generator.content, 'utf-8');
         }
     } catch (err) {
         if (err instanceof protoc.Error && !options.verbose) {
@@ -1494,15 +1472,16 @@ const main = async (args) => {
         } else {
             process.stderr.write(err.stack + '\n');
         }
-        process.exit(1);
+        return 1;
     }
-    process.exit(0);
+    return 0;
 };
 
 if (typeof process === 'object' && Array.isArray(process.argv) &&
     process.argv.length > 1 && process.argv[1] === __filename) {
     const args = process.argv.slice(2);
-    main(args);
+    const code = main(args);
+    process.exit(code);
 }
 
 if (typeof module !== 'undefined' && typeof module.exports === 'object') {

@@ -17,10 +17,10 @@ lightgbm.ModelFactory = class {
         return null;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         let obj;
         let format;
-        switch (target) {
+        switch (match) {
             case 'lightgbm.pickle': {
                 obj = context.open('pkl');
                 format = 'LightGBM Pickle';
@@ -38,7 +38,7 @@ lightgbm.ModelFactory = class {
                 break;
             }
             default: {
-                throw new lightgbm.Error("Unsupported LightGBM format '" + target + "'.");
+                throw new lightgbm.Error("Unsupported LightGBM format '" + match + "'.");
             }
         }
         return new lightgbm.Model(obj, format);
@@ -73,10 +73,10 @@ lightgbm.Graph = class {
         for (let i = 0; i < feature_names.length; i++) {
             const name = feature_names[i];
             const info = model.feature_infos && i < model.feature_infos.length ? model.feature_infos[i] : null;
-            const value = new lightgbm.Value(name, info);
-            args.push(value);
+            const argument = new lightgbm.Argument(name, info);
+            args.push(argument);
             if (feature_names.length < 1000) {
-                this._inputs.push(new lightgbm.Argument(name, [ value ]));
+                this._inputs.push(new lightgbm.Parameter(name, [ argument ]));
             }
         }
         this._nodes.push(new lightgbm.Node(model, args));
@@ -95,27 +95,31 @@ lightgbm.Graph = class {
     }
 };
 
-lightgbm.Argument = class {
+lightgbm.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-lightgbm.Value = class {
+lightgbm.Argument = class {
 
     constructor(name, quantization) {
         if (typeof name !== 'string') {
-            throw new lightgbm.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new lightgbm.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._quantization = quantization;
@@ -146,7 +150,7 @@ lightgbm.Node = class {
         this._inputs = [];
         this._outputs = [];
         this._attributes = [];
-        this._inputs.push(new lightgbm.Argument('features', args));
+        this._inputs.push(new lightgbm.Parameter('features', args));
         for (const entry of Object.entries(model)) {
             const key = entry[0];
             const value = entry[1];

@@ -176,9 +176,11 @@ host.BrowserHost = class {
     }
 
     async start() {
+
         const hash = this.window.location.hash ? this.window.location.hash.replace(/^#/, '') : '';
         const search = this.window.location.search;
         const params = new URLSearchParams(search + (hash ? '&' + hash : ''));
+
         if (this._meta.file && this._meta.identifier) {
             const url = this._meta.file[0];
             if (this._view.accept(url)) {
@@ -187,6 +189,7 @@ host.BrowserHost = class {
                 return;
             }
         }
+
         const url = params.get('url');
         if (url) {
             const identifier = params.get('identifier') || null;
@@ -202,11 +205,13 @@ host.BrowserHost = class {
                 }
             }
         }
+
         const gist = params.get('gist');
         if (gist) {
             this._openGist(gist);
             return;
         }
+
         const openFileButton = this._element('open-file-button');
         const openFileDialog = this._element('open-file-dialog');
         if (openFileButton && openFileDialog) {
@@ -245,6 +250,7 @@ host.BrowserHost = class {
                 }
             }
         });
+
         this._view.show('welcome');
     }
 
@@ -488,7 +494,6 @@ host.BrowserHost = class {
         } catch (error) {
             await this.error('Model load request failed.', error.message);
             this._view.show('welcome');
-            return null;
         }
         try {
             await this._view.open(context);
@@ -497,8 +502,8 @@ host.BrowserHost = class {
             if (err) {
                 this._view.error(err, null, 'welcome');
             }
-            return null;
         }
+        return null;
     }
 
     async _open(file, files) {
@@ -570,38 +575,6 @@ host.BrowserHost = class {
         return '';
     }
 
-    get(context, name) {
-        if (context === 'configuration' && typeof localStorage !== 'undefined') {
-            try {
-                const content = localStorage.getItem(name);
-                return JSON.parse(content);
-            } catch (error) {
-                // continue regardless of error
-            }
-        }
-        return undefined;
-    }
-
-    set(context, name, value) {
-        if (context === 'configuration' && typeof localStorage !== 'undefined') {
-            try {
-                localStorage.setItem(name, JSON.stringify(value));
-            } catch (error) {
-                // continue regardless of error
-            }
-        }
-    }
-
-    delete(context, name) {
-        if (context === 'configuration' && typeof localStorage !== 'undefined') {
-            try {
-                localStorage.removeItem(name);
-            } catch (error) {
-                // continue regardless of error
-            }
-        }
-    }
-
     _element(id) {
         return this.document.getElementById(id);
     }
@@ -616,7 +589,7 @@ host.BrowserHost = class {
                 button.onclick = () => {
                     button.onclick = null;
                     this._document.body.classList.remove('message');
-                    resolve(0);
+                    resolve();
                 };
                 button.focus();
             } else {
@@ -657,35 +630,20 @@ host.BrowserHost.BrowserFileContext = class {
         }
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            const size = 1024 * 1024 * 1024;
-            let position = 0;
-            const chunks = [];
             reader.onload = (e) => {
                 if (encoding) {
                     resolve(e.target.result);
                 } else {
+                    const base = require('./base');
                     const buffer = new Uint8Array(e.target.result);
-                    if (position === 0 && buffer.length === blob.size) {
-                        const base = require('./base');
-                        const stream = new base.BinaryStream(buffer);
-                        resolve(stream);
-                    } else {
-                        chunks.push(buffer);
-                        position += buffer.length;
-                        if (position < blob.size) {
-                            const slice = blob.slice(position, Math.min(position + size, blob.size));
-                            reader.readAsArrayBuffer(slice);
-                        } else {
-                            const stream = new host.BrowserHost.FileStream(chunks, size, 0, position);
-                            resolve(stream);
-                        }
-                    }
+                    const stream = new base.BinaryStream(buffer);
+                    resolve(stream);
                 }
             };
-            reader.onerror = (event) => {
-                event = event || this._host.window.event;
+            reader.onerror = (e) => {
+                e = e || this.window.event;
                 let message = '';
-                const error = event.target.error;
+                const error = e.target.error;
                 switch (error.code) {
                     case error.NOT_FOUND_ERR:
                         message = "File not found '" + file + "'.";
@@ -705,8 +663,7 @@ host.BrowserHost.BrowserFileContext = class {
             if (encoding === 'utf-8') {
                 reader.readAsText(blob, encoding);
             } else {
-                const slice = blob.slice(position, Math.min(position + size, blob.size));
-                reader.readAsArrayBuffer(slice);
+                reader.readAsArrayBuffer(blob);
             }
         });
     }
@@ -721,99 +678,6 @@ host.BrowserHost.BrowserFileContext = class {
 
     async open() {
         this._stream = await this.request(this._file.name, null);
-    }
-};
-
-host.BrowserHost.FileStream = class {
-
-    constructor(chunks, size, start, length) {
-        this._chunks = chunks;
-        this._size = size;
-        this._start = start;
-        this._length = length;
-        this._position = 0;
-    }
-
-    get position() {
-        return this._position;
-    }
-
-    get length() {
-        return this._length;
-    }
-
-    stream(length) {
-        const file = new host.BrowserHost.FileStream(this._chunks, this._size, this._position, length);
-        this.skip(length);
-        return file;
-    }
-
-    seek(position) {
-        this._position = position >= 0 ? position : this._length + position;
-    }
-
-    skip(offset) {
-        this._position += offset;
-        if (this._position > this._length) {
-            throw new Error('Expected ' + (this._position - this._length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
-        }
-    }
-
-    peek(length) {
-        length = length !== undefined ? length : this._length - this._position;
-        if (length < 0x10000000) {
-            const position = this._fill(length);
-            this._position -= length;
-            return this._buffer.subarray(position, position + length);
-        }
-        const position = this._position;
-        this.skip(length);
-        this.seek(position);
-        const buffer = new Uint8Array(length);
-        this._read(buffer, position);
-        return buffer;
-    }
-
-    read(length) {
-        length = length !== undefined ? length : this._length - this._position;
-        if (length < 0x10000000) {
-            const position = this._fill(length);
-            return this._buffer.subarray(position, position + length);
-        }
-        const position = this._position;
-        this.skip(length);
-        const buffer = new Uint8Array(length);
-        this._read(buffer, position);
-        return buffer;
-    }
-
-    byte() {
-        const position = this._fill(1);
-        return this._buffer[position];
-    }
-
-    _fill(length) {
-        if (this._position + length > this._length) {
-            throw new Error('Expected ' + (this._position + length - this._length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
-        }
-        if (!this._buffer || this._position < this._offset || this._position + length > this._offset + this._buffer.length) {
-            this._offset = this._position;
-            this._buffer = new Uint8Array(Math.min(0x10000000, this._size, this._length - this._offset));
-            this._read(this._buffer, this._offset);
-        }
-        const position = this._position;
-        this._position += length;
-        return position - this._offset;
-    }
-
-    _read(buffer, offset) {
-        const index = Math.floor(offset / this._size);
-        offset = offset - (index * this._size);
-        const length = Math.min(this._chunks[index].length - offset, buffer.length);
-        buffer.set(this._chunks[index].subarray(offset, offset + length), 0);
-        if (length !== buffer.length) {
-            buffer.set(this._chunks[index + 1].subarray(0, buffer.length - length), length);
-        }
     }
 };
 

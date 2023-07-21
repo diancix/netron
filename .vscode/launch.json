@@ -27,7 +27,7 @@
             }
         },
         {
-            "name": "Browser",
+            "name": "Python Server",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/package.py",

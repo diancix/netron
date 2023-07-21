@@ -1,6 +1,6 @@
 
 const flatc = {};
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 
 flatc.Object = class {
@@ -769,18 +769,13 @@ flatc.Tokenizer = class {
 
 flatc.Root = class extends flatc.Object {
 
-    constructor(root) {
+    constructor(root, paths, files) {
         super(null, root);
         this._namespaces = new Map();
         this._files = new Set();
         this.root_type = new Set();
-    }
-
-    async load(paths, files) {
         for (const file of files) {
-            /* eslint-disable no-await-in-loop */
-            await this._parseFile(paths, file);
-            /* eslint-enable no-await-in-loop */
+            this._parseFile(paths, file);
         }
         this.resolve();
     }
@@ -826,20 +821,16 @@ flatc.Root = class extends flatc.Object {
         return super.find(name, type);
     }
 
-    async _parseFile(paths, file) {
+    _parseFile(paths, file) {
         if (!this._files.has(file)) {
             this._files.add(file);
-            const content = await fs.readFile(file, 'utf-8');
+            const content = fs.readFileSync(file, 'utf-8');
             const parser = new flatc.Parser(content, file, this);
             const includes = parser.include();
             for (const include of includes) {
-                /* eslint-disable no-await-in-loop */
-                const includeFile = await this._resolve(paths, file, include);
-                /* eslint-enable no-await-in-loop */
+                const includeFile = this._resolve(paths, file, include);
                 if (includeFile) {
-                    /* eslint-disable no-await-in-loop */
-                    await this._parseFile(paths, includeFile);
-                    /* eslint-enable no-await-in-loop */
+                    this._parseFile(paths, includeFile);
                     continue;
                 }
                 throw new flatc.Error("Include '" + include + "' not found.");
@@ -848,26 +839,14 @@ flatc.Root = class extends flatc.Object {
         }
     }
 
-    async _resolve(paths, origin, target) {
-        const access = async (path) => {
-            try {
-                await fs.access(path);
-                return true;
-            } catch (error) {
-                return false;
-            }
-        };
+    _resolve(paths, origin, target) {
         const file = path.join(path.dirname(origin), target);
-        const exists = await access(file);
-        if (exists) {
+        if (fs.existsSync(file)) {
             return file;
         }
         for (const current of paths) {
             const file = path.join(current, target);
-            /* eslint-disable no-await-in-loop */
-            const exists = await access(file);
-            /* eslint-enable no-await-in-loop */
-            if (exists) {
+            if (fs.existsSync(file)) {
                 return file;
             }
         }
@@ -1232,7 +1211,8 @@ flatc.Error = class extends Error {
     }
 };
 
-const main = async (args) => {
+const main = (args) => {
+
     const options = { verbose: false, root: 'default', out: '', text: false, paths: [], files: [] };
     while (args.length > 0) {
         const arg = args.shift();
@@ -1260,12 +1240,12 @@ const main = async (args) => {
                 break;
         }
     }
+
     try {
-        const root = new flatc.Root(options.root);
-        await root.load(options.paths, options.files);
+        const root = new flatc.Root(options.root, options.paths, options.files);
         const generator = new flatc.Generator(root, options.text);
         if (options.out) {
-            await fs.writeFile(options.out, generator.content, 'utf-8');
+            fs.writeFileSync(options.out, generator.content, 'utf-8');
         }
     } catch (err) {
         if (err instanceof flatc.Error && !options.verbose) {
@@ -1273,15 +1253,16 @@ const main = async (args) => {
         } else {
             process.stderr.write(err.stack + '\n');
         }
-        process.exit(1);
+        return 1;
     }
-    process.exit(0);
+    return 0;
 };
 
 if (typeof process === 'object' && Array.isArray(process.argv) &&
     process.argv.length > 1 && process.argv[1] === __filename) {
     const args = process.argv.slice(2);
-    main(args);
+    const code = main(args);
+    process.exit(code);
 }
 
 if (typeof module !== 'undefined' && typeof module.exports === 'object') {

@@ -43,8 +43,7 @@ $root.mindspore.schema.Format = {
     NUM_OF_FORMAT: 14,
     NCDHW: 15,
     NWC: 16,
-    NCW: 17,
-    NC8HW8: 18
+    NCW: 17
 };
 
 $root.mindspore.schema.ActivationType = {
@@ -4053,9 +4052,6 @@ $root.mindspore.schema.DynamicQuant = class DynamicQuant {
         const $ = new $root.mindspore.schema.DynamicQuant();
         $.symmetric = reader.bool_(position, 4, false);
         $.dst_type = reader.int64_(position, 6, 32);
-        $.activation_channel = reader.bool_(position, 8, false);
-        $.prefer_axis = reader.int64_(position, 10, 0);
-        $.transpose = reader.bool_(position, 12, false);
         return $;
     }
 
@@ -4063,9 +4059,6 @@ $root.mindspore.schema.DynamicQuant = class DynamicQuant {
         const $ = new $root.mindspore.schema.DynamicQuant();
         $.symmetric = reader.value(json.symmetric, false);
         $.dst_type = reader.value(json.dst_type, 32);
-        $.activation_channel = reader.value(json.activation_channel, false);
-        $.prefer_axis = reader.value(json.prefer_axis, 0);
-        $.transpose = reader.value(json.transpose, false);
         return $;
     }
 };

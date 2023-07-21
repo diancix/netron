@@ -69,18 +69,18 @@ mlir.Graph = class {
             const input = func.inputs[i];
             const inputType = func.inputTypes[i];
             const type = valueType(inputType);
-            const value = new mlir.Value(input, type, "input desc", null);
-            const argument = new mlir.Argument(input, [ value ]);
-            this._inputs.push(argument);
+            const argument = new mlir.Argument(input, type, "input desc", null);
+            const parameter = new mlir.Parameter(input, true, [ argument ]);
+            this._inputs.push(parameter);
         }
         // outputs of function
         for (let i = 0; i < func.outputTypes.length; i++) {
             const output = "%return" + "/" + i;
             const outputType = func.outputTypes[i];
             const type = valueType(outputType);
-            const value = new mlir.Value(output, type, "output desc", null);
-            const argument = new mlir.Argument(output, [ value ]);
-            this._outputs.push(argument);
+            const argument = new mlir.Argument(output, type, "output desc", null);
+            const parameter = new mlir.Parameter(output, true, [ argument ]);
+            this._outputs.push(parameter);
         }
         // operations
         // args is map of edges. args will be converted to mlir.Arguemnts.
@@ -190,17 +190,17 @@ mlir.Graph = class {
         const tensors = new Map();
         const tensor = (arg) => {
             if (!tensors.has(arg.name)) {
-                tensors.set(arg.name, new mlir.Value(arg.name, arg.type, null, arg.value));
+                tensors.set(arg.name, new mlir.Argument(arg.name, arg.type, null, arg.value));
             }
             return tensors.get(arg.name);
         };
         for (const input of this._inputs) {
-            for (const arg of input.value) {
+            for (const arg of input.arguments) {
                 tensors.set(arg.name, arg);
             }
         }
         for (const output of this._outputs) {
-            for (const arg of output.value) {
+            for (const arg of output.arguments) {
                 tensors.set(arg.name, arg);
             }
         }
@@ -208,8 +208,8 @@ mlir.Graph = class {
             if (op.delete) {
                 continue;
             }
-            op.inputs = op.inputs.map((input) => new mlir.Argument(input.name, input.arguments.map((argument) => tensor(argument))));
-            op.outputs = op.outputs.map((output) => new mlir.Argument(output.name, output.arguments.map((argument) => tensor(argument))));
+            op.inputs = op.inputs.map((input) => new mlir.Parameter(input.name, true, input.arguments.map((argument) => tensor(argument))));
+            op.outputs = op.outputs.map((output) => new mlir.Parameter(output.name, true, output.arguments.map((argument) => tensor(argument))));
         }
         for (const op of operations.filter((op) => !op.delete)) {
             const type = op.type; // 'program:' + op.type;
@@ -237,27 +237,32 @@ mlir.Graph = class {
     }
 };
 
-mlir.Argument = class {
+mlir.Parameter = class {
 
-    constructor(name, value) {
-        this._name = name;
-        this._value = value;
+    constructor(name, visible, args) {
+        this._name = name;       // string
+        this._visible = visible; // bool
+        this._arguments = args;  // [mlir.Argument]
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return this._visible == false ? false : true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-mlir.Value = class {
+mlir.Argument = class {
 
     constructor(name, type, description, initializer) {
         if (typeof name !== 'string') {
-            throw new mlir.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new mlir.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;          // string
         this._type = type || null;  // mlir.TensorType

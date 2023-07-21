@@ -10,11 +10,11 @@ rknn.ModelFactory = class {
         return rknn.Container.open(context);
     }
 
-    async open(context, target) {
+    async open(context, match) {
         await context.require('./rknn-schema');
         rknn.schema = flatbuffers.get('rknn').rknn;
         const metadata = await context.metadata('rknn-metadata.json');
-        const container = target;
+        const container = match;
         const type = container.type;
         switch (type) {
             case 'json': {
@@ -136,24 +136,25 @@ rknn.Graph = class {
                     const shape = new rknn.TensorShape(const_tensor.size);
                     const type = new rknn.TensorType(dataType(const_tensor.dtype), shape);
                     const tensor = new rknn.Tensor(type, const_tensor.offset, next.value);
-                    const value = new rknn.Value(name, type, tensor);
-                    args.set(name, value);
+                    const argument = new rknn.Argument(name, type, tensor);
+                    args.set(name, argument);
                 }
                 for (const virtual_tensor of model.virtual_tensor) {
                     const name = virtual_tensor.node_id.toString() + ':' + virtual_tensor.output_port.toString();
-                    const value = new rknn.Value(name, null, null);
-                    args.set(name, value);
+                    const argument = new rknn.Argument(name, null, null);
+                    args.set(name, argument);
                 }
                 for (const norm_tensor of model.norm_tensor) {
                     const name = 'norm_tensor:' + norm_tensor.tensor_id.toString();
                     const shape = new rknn.TensorShape(norm_tensor.size);
                     const type = new rknn.TensorType(dataType(norm_tensor.dtype), shape);
-                    const value = new rknn.Value(name, type, null);
-                    args.set(name, value);
+                    const argument = new rknn.Argument(name, type, null);
+                    args.set(name, argument);
                 }
                 const arg = (name) => {
                     if (!args.has(name)) {
-                        args.set(name, new rknn.Value(name, null, null));
+                        const argument = new rknn.Argument(name, null, null);
+                        args.set(name, argument);
                     }
                     return args.get(name);
                 };
@@ -178,15 +179,15 @@ rknn.Graph = class {
                 }
                 for (const graph of model.graph) {
                     const key = graph.right + ':' + graph.right_tensor_id.toString();
-                    const value = arg(key);
+                    const argument = arg(key);
                     const name = graph.left + (graph.left_tensor_id === 0 ? '' : graph.left_tensor_id.toString());
-                    const argument = new rknn.Argument(name, [ value ]);
+                    const parameter = new rknn.Parameter(name, [ argument ]);
                     switch (graph.left) {
                         case 'input':
-                            this._inputs.push(argument);
+                            this._inputs.push(parameter);
                             break;
                         case 'output':
-                            this._outputs.push(argument);
+                            this._outputs.push(parameter);
                             break;
                         default:
                             throw new rknn.Error("Unsupported left graph connection '" + graph.left + "'.");
@@ -206,7 +207,7 @@ rknn.Graph = class {
                     }
                     const type = new rknn.TensorType(dataType, shape);
                     const initializer = tensor.kind !== 4 && tensor.kind !== 5 ? null : new rknn.Tensor(type, 0, null);
-                    return new rknn.Value(tensor.name, type, initializer);
+                    return new rknn.Argument(tensor.name, type, initializer);
                 });
                 const arg = (index) => {
                     if (index >= args.length) {
@@ -245,27 +246,31 @@ rknn.Graph = class {
     }
 };
 
-rknn.Argument = class {
+rknn.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-rknn.Value = class {
+rknn.Argument = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new rknn.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new rknn.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._type = type || null;
@@ -322,7 +327,7 @@ rknn.Node = class {
                         }
                         throw new rknn.Error('Invalid input argument.');
                     });
-                    this._inputs.push(new rknn.Argument(input.name, list));
+                    this._inputs.push(new rknn.Parameter(input.name, list));
                     i += count;
                 }
                 node.output = node.output || [];
@@ -338,7 +343,7 @@ rknn.Node = class {
                         }
                         throw new rknn.Error('Invalid output argument.');
                     });
-                    this._outputs.push(new rknn.Argument(output.name, list));
+                    this._outputs.push(new rknn.Parameter(output.name, list));
                     i += count;
                 }
                 if (node.nn) {
@@ -359,22 +364,22 @@ rknn.Node = class {
                 if (node.inputs.length > 0) {
                     const inputs = this._type.inputs || (node.inputs.length === 1 ? [ { name: "input" } ] : [ { name: "inputs", list: true } ]);
                     if (Array.isArray(inputs) && inputs.length > 0 && inputs[0].list === true) {
-                        this._inputs = [new rknn.Argument(inputs[0].name, Array.from(node.inputs).map((input) => arg(input))) ];
+                        this._inputs = [new rknn.Parameter(inputs[0].name, Array.from(node.inputs).map((input) => arg(input))) ];
                     } else {
                         this._inputs = Array.from(node.inputs).map((input, index) => {
-                            const value = arg(input);
-                            return new rknn.Argument(index < inputs.length ? inputs[index].name : index.toString(), [ value ]);
+                            const argument = arg(input);
+                            return new rknn.Parameter(index < inputs.length ? inputs[index].name : index.toString(), [ argument ]);
                         });
                     }
                 }
                 if (node.outputs.length > 0) {
                     const outputs = this._type.outputs || (node.outputs.length === 1 ? [ { name: "output" } ] : [ { name: "outputs", list: true } ]);
                     if (Array.isArray(outputs) && outputs.length > 0 && outputs[0].list === true) {
-                        this._outputs = [ new rknn.Argument(outputs[0].name, Array.from(node.outputs).map((output) => arg(output))) ];
+                        this._outputs = [ new rknn.Parameter(outputs[0].name, Array.from(node.outputs).map((output) => arg(output))) ];
                     } else {
                         this._outputs = Array.from(node.outputs).map((output, index) => {
-                            const value = arg(output);
-                            return new rknn.Argument(index < outputs.length ? outputs[index].name : index.toString(), [ value ]);
+                            const argument = arg(output);
+                            return new rknn.Parameter(index < outputs.length ? outputs[index].name : index.toString(), [ argument ]);
                         });
                     }
                 }

@@ -48,73 +48,74 @@ mlnet.Model = class {
 mlnet.Graph = class {
 
     constructor(metadata, reader) {
+
         this._inputs = [];
         this._outputs = [];
         this._nodes = [];
         this._groups = false;
-        const args = new Map();
-        const arg = (name, type) => {
-            if (!args.has(name)) {
-                args.set(name, new mlnet.Value(name, type || null));
-            } else if (type) {
-                throw new mlnet.Error("Duplicate value '" + name + "'.");
-            }
-            return args.get(name);
-        };
+
         if (reader.schema && reader.schema.inputs) {
             for (const input of reader.schema.inputs) {
-                this._inputs.push(new mlnet.Argument(input.name, [ arg(input.name, new mlnet.TensorType(input.type)) ]));
+                this._inputs.push(new mlnet.Parameter(input.name, [
+                    new mlnet.Argument(input.name, new mlnet.TensorType(input.type))
+                ]));
             }
         }
-        const createNode = (scope, group, transformer) => {
-            if (transformer.inputs && transformer.outputs) {
-                for (const input of transformer.inputs) {
-                    input.name = scope[input.name] ? scope[input.name].argument : input.name;
-                }
-                for (const output of transformer.outputs) {
-                    if (scope[output.name]) {
-                        scope[output.name].counter++;
-                        const next = output.name + '\n' + scope[output.name].counter.toString(); // custom argument id
-                        scope[output.name].argument = next;
-                        output.name = next;
-                    } else {
-                        scope[output.name] = {
-                            argument: output.name,
-                            counter: 0
-                        };
-                    }
-                }
-            }
-            this._nodes.push(new mlnet.Node(metadata, group, transformer, arg));
-        };
-        const loadChain = (scope, name, chain) => {
-            this._groups = true;
-            const group = name.split('/').splice(1).join('/');
-            for (const childTransformer of chain) {
-                loadTransformer(scope, group, childTransformer);
-            }
-        };
-        const loadTransformer = (scope, group, transformer) => {
-            switch (transformer.__type__) {
-                case 'TransformerChain':
-                case 'Text':
-                    loadChain(scope, transformer.__name__, transformer.chain);
-                    break;
-                default:
-                    createNode(scope, group, transformer);
-                    break;
-            }
-        };
+
         const scope = new Map();
         if (reader.dataLoaderModel) {
-            loadTransformer(scope, '', reader.dataLoaderModel);
+            this._loadTransformer(metadata, scope, '', reader.dataLoaderModel);
         }
         if (reader.predictor) {
-            loadTransformer(scope, '', reader.predictor);
+            this._loadTransformer(metadata, scope, '', reader.predictor);
         }
         if (reader.transformerChain) {
-            loadTransformer(scope, '', reader.transformerChain);
+            this._loadTransformer(metadata, scope, '', reader.transformerChain);
         }
+    }
+
+    _loadTransformer(metadata, scope, group, transformer) {
+        switch (transformer.__type__) {
+            case 'TransformerChain':
+            case 'Text':
+                this._loadChain(metadata, scope, transformer.__name__, transformer.chain);
+                break;
+            default:
+                this._createNode(metadata, scope, group, transformer);
+                break;
+        }
+    }
+
+    _loadChain(metadata, scope, name, chain) {
+        this._groups = true;
+        const group = name.split('/').splice(1).join('/');
+        for (const childTransformer of chain) {
+            this._loadTransformer(metadata, scope, group, childTransformer);
+        }
+    }
+
+    _createNode(metadata, scope, group, transformer) {
+
+        if (transformer.inputs && transformer.outputs) {
+            for (const input of transformer.inputs) {
+                input.name = scope[input.name] ? scope[input.name].argument : input.name;
+            }
+            for (const output of transformer.outputs) {
+                if (scope[output.name]) {
+                    scope[output.name].counter++;
+                    const next = output.name + '\n' + scope[output.name].counter.toString(); // custom argument id
+                    scope[output.name].argument = next;
+                    output.name = next;
+                } else {
+                    scope[output.name] = {
+                        argument: output.name,
+                        counter: 0
+                    };
+                }
+            }
+        }
+
+        this._nodes.push(new mlnet.Node(metadata, group, transformer));
     }
 
     get groups() {
@@ -134,27 +135,31 @@ mlnet.Graph = class {
     }
 };
 
-mlnet.Argument = class {
+mlnet.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-mlnet.Value = class {
+mlnet.Argument = class {
 
     constructor(name, type) {
         if (typeof name !== 'string') {
-            throw new mlnet.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new mlnet.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._type = type;
@@ -171,7 +176,7 @@ mlnet.Value = class {
 
 mlnet.Node = class {
 
-    constructor(metadata, group, transformer, arg) {
+    constructor(metadata, group, transformer) {
         this._metadata = metadata;
         this._group = group;
         this._name = transformer.__name__;
@@ -180,23 +185,30 @@ mlnet.Node = class {
         this._attributes = [];
         const type = transformer.__type__;
         this._type = metadata.type(type) || { name: type };
+
         if (transformer.inputs) {
             let i = 0;
             for (const input of transformer.inputs) {
-                this._inputs.push(new mlnet.Argument(i.toString(), [ arg(input.name) ]));
+                this._inputs.push(new mlnet.Parameter(i.toString(), [
+                    new mlnet.Argument(input.name)
+                ]));
                 i++;
             }
         }
+
         if (transformer.outputs) {
             let i = 0;
             for (const output of transformer.outputs) {
-                this._outputs.push(new mlnet.Argument(i.toString(), [ arg(output.name) ]));
+                this._outputs.push(new mlnet.Parameter(i.toString(), [
+                    new mlnet.Argument(output.name)
+                ]));
                 i++;
             }
         }
+
         for (const key of Object.keys(transformer).filter((key) => !key.startsWith('_') && key !== 'inputs' && key !== 'outputs')) {
-            const attribute = new mlnet.Attribute(metadata.attribute(type, this._name), key, transformer[key]);
-            this._attributes.push(attribute);
+            const schema = metadata.attribute(type, this._name);
+            this._attributes.push(new mlnet.Attribute(schema, key, transformer[key]));
         }
     }
 
@@ -268,6 +280,10 @@ mlnet.Attribute = class {
 
     get value() {
         return this._value;
+    }
+
+    get visible() {
+        return true;
     }
 };
 

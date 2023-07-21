@@ -8,10 +8,10 @@ dlc.ModelFactory = class {
         return dlc.Container.open(context);
     }
 
-    async open(context, target) {
+    async open(context, match) {
         await context.require('./dlc-schema');
         dlc.schema = flatbuffers.get('dlc').dlc;
-        const container = target;
+        const container = match;
         let model = null;
         let params = null;
         const metadata_props = container.metadata;
@@ -77,18 +77,18 @@ dlc.Graph = class {
     constructor(metadata, model, params) {
         this._inputs = [];
         this._outputs = [];
-        const values = new Map();
-        const value = (name) => {
-            if (!values.has(name)) {
-                values.set(name, new dlc.Value(name));
+        const args = new Map();
+        const arg = (name) => {
+            if (!args.has(name)) {
+                args.set(name, new dlc.Argument(name));
             }
-            return values.get(name);
+            return args.get(name);
         };
         if (model) {
             for (const node of model.nodes) {
                 for (const input of node.inputs) {
-                    if (!values.has(input)) {
-                        values.set(input, {});
+                    if (!args.has(input)) {
+                        args.set(input, {});
                     }
                 }
                 const shapes = new Array(node.outputs.length);
@@ -103,31 +103,32 @@ dlc.Graph = class {
                 }
                 for (let i = 0; i < node.outputs.length; i++) {
                     const output = node.outputs[i];
-                    if (!values.has(output)) {
-                        values.set(output, {});
+                    if (!args.has(output)) {
+                        args.set(output, {});
                     }
-                    const value = values.get(output);
+                    const value = args.get(output);
                     if (i < shapes.length) {
                         value.shape = shapes[i];
                     }
                 }
             }
-            for (const entry of values) {
-                const type = entry[1].shape ? new dlc.TensorType(null, entry[1].shape) : null;
-                const value = new dlc.Value(entry[0], type);
-                values.set(entry[0], value);
+            for (const entry of args) {
+                const value = entry[1];
+                const type = value.shape ? new dlc.TensorType(null, value.shape) : null;
+                const argument = new dlc.Argument(entry[0], type);
+                args.set(entry[0], argument);
             }
             this._nodes = [];
             const weights = new Map(params ? params.weights.map((weights) => [ weights.name, weights ]) : []);
             for (const node of model.nodes) {
                 if (node.type === 'Input') {
-                    this._inputs.push(new dlc.Argument(node.name, node.inputs.map((input) => value(input))));
+                    this._inputs.push(new dlc.Parameter(node.name, node.inputs.map((input) => arg(input))));
                     continue;
                 }
-                this._nodes.push(new dlc.Node(metadata, node, weights.get(node.name), value));
+                this._nodes.push(new dlc.Node(metadata, node, weights.get(node.name), arg));
             }
         } else {
-            this._nodes = params.weights.map((weights) => new dlc.Node(metadata, null, weights, value));
+            this._nodes = params.weights.map((weights) => new dlc.Node(metadata, null, weights, arg));
         }
     }
 
@@ -144,27 +145,31 @@ dlc.Graph = class {
     }
 };
 
-dlc.Argument = class {
+dlc.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-dlc.Value = class {
+dlc.Argument = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new dlc.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new dlc.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._type = type;
@@ -186,14 +191,14 @@ dlc.Value = class {
 
 dlc.Node = class {
 
-    constructor(metadata, node, weights, value) {
+    constructor(metadata, node, weights, arg) {
         if (node) {
             this._type = metadata.type(node.type);
             this._name = node.name;
-            const inputs = Array.from(node.inputs).map((input) => value(input));
-            this._inputs = inputs.length === 0 ? [] : [ new dlc.Argument(inputs.length === 1 ? 'input' : 'inputs', inputs) ];
-            const outputs = Array.from(node.outputs).map((output) => value(output));
-            this._outputs = outputs.length === 0 ? [] : [ new dlc.Argument(outputs.length === 1 ? 'output' : 'outputs', outputs) ];
+            const inputs = Array.from(node.inputs).map((input) => arg(input));
+            this._inputs = inputs.length === 0 ? [] : [ new dlc.Parameter(inputs.length === 1 ? 'input' : 'inputs', inputs) ];
+            const outputs = Array.from(node.outputs).map((output) => arg(output));
+            this._outputs = outputs.length === 0 ? [] : [ new dlc.Parameter(outputs.length === 1 ? 'output' : 'outputs', outputs) ];
             this._attributes = [];
             for (const attr of node.attributes) {
                 if (attr.name === 'OutputDims') {
@@ -205,8 +210,8 @@ dlc.Node = class {
             if (weights) {
                 for (const tensor of weights.tensors) {
                     const type = new dlc.TensorType(tensor.data.data_type, tensor.shape);
-                    const value = new dlc.Value('', type, new dlc.Tensor(type, tensor.data));
-                    this._inputs.push(new dlc.Argument(tensor.name, [ value ]));
+                    const argument = new dlc.Argument('', type, new dlc.Tensor(type, tensor.data));
+                    this._inputs.push(new dlc.Parameter(tensor.name, [ argument ]));
                 }
             }
         } else {
@@ -214,8 +219,8 @@ dlc.Node = class {
             this._name = weights.name;
             this._inputs = weights.tensors.map((tensor) => {
                 const type = new dlc.TensorType(tensor.data.data_type, tensor.shape);
-                const value = new dlc.Value('', type, new dlc.Tensor(type, tensor.data));
-                return new dlc.Argument(tensor.name, [ value ]);
+                const argument = new dlc.Argument('', type, new dlc.Tensor(type, tensor.data));
+                return new dlc.Parameter(tensor.name, [ argument ]);
             });
             this._outputs = [];
             this._attributes = [];

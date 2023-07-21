@@ -887,11 +887,10 @@
       { "name": "input", "type": "T" },
       { "name": "feature", "type": "T" },
       { "name": "time", "type": "T" },
-      { "name": "bias", "type": "T" },
-      { "name": "state", "type": "T" }
+      { "name": "bias", "type": "T" }
     ],
     "outputs": [
-      { "name": "state_out", "type": "T" },
+      { "name": "state", "type": "T" },
       { "name": "output", "type": "T" }
     ]
   },

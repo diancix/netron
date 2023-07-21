@@ -90,13 +90,6 @@ window.terminate = function(message, action, callback) {
         button.style.display = 'none';
         button.onclick = null;
     }
-    if (window.__view__) {
-        try {
-            window.__view__.show('welcome message');
-        } catch (error) {
-            // continue regardless of error
-        }
-    }
     document.body.setAttribute('class', 'welcome message');
 };
 
@@ -116,7 +109,6 @@ window.addEventListener('load', function() {
             var host = new window.host.BrowserHost();
             var view = require('./view');
             window.__view__ = new view.View(host);
-            window.__view__.start();
         }
     });
 });

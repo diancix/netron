@@ -13,14 +13,12 @@ var app = {};
 app.Application = class {
 
     constructor() {
+
         this._views = new app.ViewCollection(this);
         this._configuration = new app.ConfigurationService();
         this._menu = new app.MenuService(this._views);
         this._openQueue = [];
-        this._package = {};
-    }
 
-    start() {
         const packageFile = path.join(path.dirname(__dirname), 'package.json');
         const packageContent = fs.readFileSync(packageFile, 'utf-8');
         this._package = JSON.parse(packageContent);
@@ -53,11 +51,6 @@ app.Application = class {
         });
         electron.ipcMain.on('set-configuration', (event, obj) => {
             this._configuration.set(obj.name, obj.value);
-            this._configuration.save();
-            event.returnValue = null;
-        });
-        electron.ipcMain.on('delete-configuration', (event, obj) => {
-            this._configuration.delete(obj.name);
             this._configuration.save();
             event.returnValue = null;
         });
@@ -116,7 +109,7 @@ app.Application = class {
             name: this._package.productName,
             version: this._package.version,
             date: this._package.date,
-            repository: 'https://github.com/' + this._package.repository,
+            repository: 'https://github.com' + this._package.repository,
             platform: process.platform,
             separator: path.sep,
             titlebar: true // process.platform === 'darwin'
@@ -307,8 +300,8 @@ app.Application = class {
         let updated = false;
         let recents = this._configuration.has('recents') ? this._configuration.get('recents') : [];
         if (path && (recents.length === 0 || recents[0] !== path)) {
-            recents = recents.filter((recent) => path !== recent);
-            recents.unshift(path);
+            recents = recents.filter((recent) => path !== recent.path);
+            recents.unshift({ path: path });
             updated = true;
         }
         const value = [];
@@ -317,11 +310,12 @@ app.Application = class {
                 updated = true;
                 break;
             }
-            if (!fs.existsSync(recent)) {
+            const path = recent.path;
+            if (!fs.existsSync(path)) {
                 updated = true;
                 continue;
             }
-            const stat = fs.statSync(recent);
+            const stat = fs.statSync(path);
             if (!stat.isFile() && !stat.isDirectory()) {
                 updated = true;
                 continue;
@@ -339,7 +333,7 @@ app.Application = class {
         let recents = [];
         if (this._configuration.has('recents')) {
             const value = this._configuration.get('recents');
-            recents = value.map((recent) => app.Application.location(recent));
+            recents = value.map((recent) => app.Application.location(recent.path));
         }
 
         if (this.environment.titlebar && recents.length > 0) {
@@ -953,9 +947,6 @@ app.ConfigurationService = class {
             if (data) {
                 try {
                     this._data = JSON.parse(data);
-                    if (Array.isArray(this._data.recents)) {
-                        this._data.recents = this._data.recents.map((recent) => typeof recent === 'string' ? recent : (recent && recent.path ? recent.path : recent));
-                    }
                 } catch (error) {
                     // continue regardless of error
                 }
@@ -980,10 +971,6 @@ app.ConfigurationService = class {
 
     get(name) {
         return this._data[name];
-    }
-
-    delete(name) {
-        delete this._data[name];
     }
 };
 
@@ -1067,4 +1054,3 @@ app.MenuService = class {
 };
 
 global.application = new app.Application();
-global.application.start();

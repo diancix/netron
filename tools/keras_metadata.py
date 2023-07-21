@@ -4,9 +4,8 @@ import json
 import os
 import pydoc
 import re
-import logging
 
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 def _read(path):
     with open(path, 'r', encoding='utf-8') as file:

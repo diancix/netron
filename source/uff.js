@@ -27,11 +27,11 @@ uff.ModelFactory = class {
         return undefined;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         await context.require('./uff-proto');
         uff.proto = protobuf.get('uff').uff;
         let meta_graph = null;
-        switch (target) {
+        switch (match) {
             case 'uff.pb': {
                 try {
                     const stream = context.stream;
@@ -54,7 +54,7 @@ uff.ModelFactory = class {
                 break;
             }
             default: {
-                throw new uff.Error("Unsupported UFF format '" + target + "'.");
+                throw new uff.Error("Unsupported UFF format '" + match + "'.");
             }
         }
         const metadata = await context.metadata('uff-metadata.json');
@@ -106,10 +106,10 @@ uff.Graph = class {
         for (const node of graph.nodes) {
             for (const input of node.inputs) {
                 counts.set(input, counts.has(input) ? counts.get(input) + 1 : 1);
-                args.set(input, new uff.Value(input));
+                args.set(input, new uff.Argument(input));
             }
             if (!args.has(node.id)) {
-                args.set(node.id, new uff.Value(node.id));
+                args.set(node.id, new uff.Argument(node.id));
             }
         }
         for (let i = graph.nodes.length - 1; i >= 0; i--) {
@@ -121,7 +121,7 @@ uff.Graph = class {
                 }
                 if (fields.dtype && fields.shape && fields.values) {
                     const tensor = new uff.Tensor(fields.dtype.dtype, fields.shape, fields.values);
-                    args.set(node.id, new uff.Value(node.id, tensor.type, tensor));
+                    args.set(node.id, new uff.Argument(node.id, tensor.type, tensor));
                     graph.nodes.splice(i, 1);
                 }
             }
@@ -131,17 +131,17 @@ uff.Graph = class {
                     fields[field.key] = field.value;
                 }
                 const type = fields.dtype && fields.shape ? new uff.TensorType(fields.dtype.dtype, fields.shape) : null;
-                args.set(node.id, new uff.Value(node.id, type, null));
+                args.set(node.id, new uff.Argument(node.id, type, null));
             }
         }
 
         for (const node of graph.nodes) {
             if (node.operation === 'Input') {
-                this._inputs.push(new uff.Argument(node.id, [ args.get(node.id) ]));
+                this._inputs.push(new uff.Parameter(node.id, [ args.get(node.id) ]));
                 continue;
             }
             if (node.operation === 'MarkOutput' && node.inputs.length === 1) {
-                this._outputs.push(new uff.Argument(node.id, [ args.get(node.inputs[0]) ]));
+                this._outputs.push(new uff.Parameter(node.id, [ args.get(node.inputs[0]) ]));
                 continue;
             }
             this._nodes.push(new uff.Node(metadata, node, args));
@@ -165,27 +165,31 @@ uff.Graph = class {
     }
 };
 
-uff.Argument = class {
+uff.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get visible() {
+        return true;
+    }
+
+    get arguments() {
+        return this._arguments;
     }
 };
 
-uff.Value = class {
+uff.Argument = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new uff.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new uff.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name = name;
         this._type = type || null;
@@ -224,17 +228,17 @@ uff.Node = class {
                             return args.get(id);
                         });
                         inputIndex += inputCount;
-                        this._inputs.push(new uff.Argument(inputSchema.name, inputArguments));
+                        this._inputs.push(new uff.Parameter(inputSchema.name, inputArguments));
                     }
                 }
             }
             this._inputs.push(...node.inputs.slice(inputIndex).map((id, index) => {
                 const inputName = ((inputIndex + index) == 0) ? 'input' : (inputIndex + index).toString();
-                return new uff.Argument(inputName, [ args.get(id) ]);
+                return new uff.Parameter(inputName, [ args.get(id) ]);
             }));
         }
 
-        this._outputs.push(new uff.Argument('output', [
+        this._outputs.push(new uff.Parameter('output', [
             args.get(node.id)
         ]));
 
@@ -297,6 +301,10 @@ uff.Attribute = class {
 
     get value() {
         return this._value;
+    }
+
+    get visible() {
+        return true;
     }
 };
 

@@ -13,9 +13,9 @@ lasagne.ModelFactory = class {
         return null;
     }
 
-    async open(context, target) {
+    async open(context, match) {
         const metadata = await context.metadata('lasagne-metadata.json');
-        return new lasagne.Model(metadata, target);
+        return new lasagne.Model(metadata, match);
     }
 };
 
@@ -44,7 +44,7 @@ lasagne.Graph = class {
         const args = new Map();
         const arg = (name, type, initializer) => {
             if (!args.has(name)) {
-                args.set(name, new lasagne.Value(name, type));
+                args.set(name, new lasagne.Argument(name, type));
             }
             const value = args.get(name);
             if (!value.type && type) {
@@ -61,7 +61,7 @@ lasagne.Graph = class {
             const layer = model.layers_[name];
             if (layer && layer.__class__ && layer.__class__.__module__ === 'lasagne.layers.input' && layer.__class__.__name__ === 'InputLayer') {
                 const type = new lasagne.TensorType(layer.input_var.type.dtype, new lasagne.TensorShape(layer.shape));
-                this._inputs.push(new lasagne.Argument(layer.name, [ arg(layer.name, type) ]));
+                this._inputs.push(new lasagne.Parameter(layer.name, [ arg(layer.name, type) ]));
                 continue;
             }
             this._nodes.push(new lasagne.Node(metadata, layer, arg));
@@ -69,7 +69,7 @@ lasagne.Graph = class {
 
         if (model._output_layer) {
             const output_layer = model._output_layer;
-            this._outputs.push(new lasagne.Argument(output_layer.name, [ arg(output_layer.name) ]));
+            this._outputs.push(new lasagne.Parameter(output_layer.name, [ arg(output_layer.name) ]));
         }
     }
 
@@ -86,27 +86,31 @@ lasagne.Graph = class {
     }
 };
 
-lasagne.Argument = class {
+lasagne.Parameter = class {
 
-    constructor(name, value) {
+    constructor(name, args) {
         this._name = name;
-        this._value = value;
+        this._arguments = args;
     }
 
     get name() {
         return this._name;
     }
 
-    get value() {
-        return this._value;
+    get arguments() {
+        return this._arguments;
+    }
+
+    get visible() {
+        return true;
     }
 };
 
-lasagne.Value = class {
+lasagne.Argument = class {
 
     constructor(name, type, initializer) {
         if (typeof name !== 'string') {
-            throw new lasagne.Error("Invalid value identifier '" + JSON.stringify(name) + "'.");
+            throw new lasagne.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
         this._name= name;
         this._type = type || null;
@@ -163,7 +167,7 @@ lasagne.Node = class {
         if (layer.input_layer && layer.input_layer.name) {
             const input_layer = layer.input_layer;
             const type = layer.input_shape ? new lasagne.TensorType('?', new lasagne.TensorShape(layer.input_shape)) : undefined;
-            this._inputs.push(new lasagne.Argument('input', [ arg(input_layer.name, type) ]));
+            this._inputs.push(new lasagne.Parameter('input', [ arg(input_layer.name, type) ]));
         }
 
         if (layer.params) {
@@ -172,12 +176,12 @@ lasagne.Node = class {
                 const param_key = params.get(param.name);
                 if (param_key) {
                     const initializer = new lasagne.Tensor(param.container.storage[0]);
-                    this._inputs.push(new lasagne.Argument(param_key, [ arg(param.name, null, initializer) ]));
+                    this._inputs.push(new lasagne.Parameter(param_key, [ arg(param.name, null, initializer) ]));
                 }
             }
         }
 
-        this._outputs.push(new lasagne.Argument('output', [ arg(this.name) ]));
+        this._outputs.push(new lasagne.Parameter('output', [ arg(this.name) ]));
     }
 
     get type() {
